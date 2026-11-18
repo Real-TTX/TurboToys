@@ -85,6 +85,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(t => t.Name).HasMaxLength(60);
             e.Property(t => t.Description).HasMaxLength(400);
             e.Property(t => t.TimeOfDay).HasConversion<int>();
+            e.Property(t => t.Design).HasColumnType("text");
+            e.HasOne<Player>().WithMany().HasForeignKey(t => t.OwnerId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(t => t.OwnerId);
         });
 
         modelBuilder.Entity<Cup>(e =>

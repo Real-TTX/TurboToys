@@ -363,6 +363,49 @@ export function trunk(color, w = 60, h = 30, d = 40) {
     return g;
 }
 
+/**
+ * A flat-topped steamer trunk (w across x, h tall, d along z) that can carry a road: wooden rims, leather straps over the ends, brass corners,
+ * a lock on the +x end; stickerMaterials (optional, [+x, -x]) are travel labels on both ends.
+ */
+export function flatTrunk(color, w, h, d, stickerMaterials = null) {
+    const g = group(at(box(w, h, d, color), 0, h / 2, 0));
+    for (const y of [0.7, h - 0.7]) g.add(at(box(w + 0.6, 1.4, d + 0.6, A.woodDark), 0, y, 0));
+    if (h > 9) g.add(at(box(w + 0.5, 1, d + 0.5, A.woodDark), 0, h * 0.5, 0));
+    for (const sz of [-0.3, 0.3]) g.add(at(box(w + 0.8, h + 0.2, 3, A.leather), 0, h / 2, sz * d));
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+        g.add(at(box(2.6, h + 0.3, 2.6, A.brass), sx * (w / 2 - 0.9), h / 2, sz * (d / 2 - 0.9)));
+    }
+    g.add(at(box(1.2, Math.min(7, h * 0.4), 6, A.brass), w / 2 + 0.5, h * 0.62, 0));
+    if (stickerMaterials) {
+        const size = Math.min(h * 0.5, d * 0.32, 9);
+        for (const [k, sx] of [[0, 1], [1, -1]]) {
+            const label = new THREE.Mesh(new THREE.PlaneGeometry(size * 1.4, size), stickerMaterials[k]);
+            label.position.set(sx * (w / 2 + 0.08), h * 0.32, -sx * d * 0.12);
+            label.rotation.set(0, sx * Math.PI / 2, (k ? -0.12 : 0.1));
+            g.add(label);
+        }
+    }
+    return g;
+}
+
+/** A travel sticker of an old trunk: a faded label with a double frame and a place name (opaque, no alpha sorting). */
+export function travelSticker(text, color, ink = '#f3e6c4') {
+    return canvasTexture(192, 128, (ctx, w, h) => {
+        ctx.fillStyle = color;
+        ctx.fillRect(0, 0, w, h);
+        ctx.lineWidth = 6;
+        ctx.strokeStyle = ink;
+        ctx.strokeRect(10, 10, w - 20, h - 20);
+        ctx.lineWidth = 2;
+        ctx.strokeRect(20, 20, w - 40, h - 40);
+        ctx.font = '34px Bangers, Impact, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = ink;
+        ctx.fillText(text, w / 2, h / 2 + 2);
+    });
+}
+
 /** A flat old suitcase (lying) with handle, straps and corners. */
 export function suitcase(color, w = 44, h = 13, d = 30) {
     const g = group(at(roundBox(w, h, d, 2.4, color), 0, h / 2, 0));

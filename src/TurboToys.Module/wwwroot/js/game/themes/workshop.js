@@ -1,10 +1,14 @@
-// TurboToys · themes/workshop.js – "Werkstatt-Wahnsinn": a giant garage workshop. Concrete floor with oil stains, a low workbench the track climbs
-// onto (plank ramps on trestles, a vice and tools on the bench, a pegboard behind it), tool walls, a tyre stack, oil drums and cans, the red tool
-// chest, the nose of a vintage car poking out of the wall, hanging fluorescent lamps and the open workshop door with daylight.
+// TurboToys · themes/workshop.js – "Werkstatt-Wahnsinn": a giant garage workshop. Concrete floor with oil stains; the official lap is a figure
+// eight: a looping of bent steel rail on the start straight, up onto the workbench (a vice and tools on it, a pegboard behind it), down a plank
+// bridge on wooden braces over the lap, through a crate and, as a shortcut, under a steel shelf. Tool walls, a tyre stack, oil drums and cans,
+// the red tool chest, the nose of a vintage car poking out of the wall, hanging fluorescent lamps and the open workshop door with daylight.
+// Custom tracks (editor layouts) get the same world without the workbench: braces under raised roads, rails on loopings, dressed crates.
 
 import * as THREE from 'three';
 import { toon, flat, fx, fxLayer, box, roundBox, cyl, sphere, cone, torus, at, group, canvasTexture, LAYER_FX } from '../render/toon.js';
 import { scatter, lamp } from './common.js';
+import { loopPoint } from '../tracks/track.js';
+import { BARRIER_OFFSET } from '../tracks/builder.js';
 import {
     C, labelTexture, pegboardTexture, tyre, tyreStack, tyreUpright, barrel, oilCan, oiler, paintCan, toolChest, wrench, hammer, saw, screwdriver,
     vice, drill, nut, bolt, washer, sawhorse, cableReel, fireExtinguisher, trolleyJack, crate, cardboardBox, broom, bucket, shelfRack,
@@ -239,8 +243,15 @@ export default {
         root.add(sunkenFloor(track, { size: 1300, tile: 90, material: floorMaterial }));
         buildWalls(root, room);
 
-        // ---- the workbench under the raised road, the plank ramps on trestles
-        buildBench(root, track, rng, q, { free });
+        // ---- the set pieces of the track: the workbench under the raised road (only the official layout: its bench stretch is known),
+        // braces under every raised road, the steel shelf over a 'shelf' shortcut, the bent rails of the loopings, the crate tunnels' dressing
+        const official = track.key === 'workshop';
+        const onBench = (path, i) => official && path === track && track.y[i] > 14.3 && track.z[i] < -118;
+        if (official) buildBench(root, track, rng, q, { free, onBench: i => onBench(track, i) });
+        buildBraces(root, track, onBench);
+        for (const branch of track.branches) if (branch.style === 'shelf') buildShelfTunnel(root, track, branch, rng, { canLabels });
+        for (const loop of track.loops) buildLoopRails(root, track, loop);
+        for (const tunnel of track.tunnels) if (tunnel.style === 'crate') dressCrate(root, track, tunnel);
 
         // ---- the vintage car's nose sticking out of the east wall
         const car = carFront({ body: 100, color: C.mint, lampMaterial: lampLens });
@@ -423,15 +434,11 @@ function buildWalls(root, room) {
 
 // ------------------------------------------------------------------ the bench (under the raised flat part) and the ramps
 
-function buildBench(root, track, rng, q, { free }) {
+/** The workbench of the official layout: a cabinet with a wooden top under the bench stretch of the road (onBench(i)), the pegboard behind it, tools on top. */
+function buildBench(root, track, rng, q, { free, onBench }) {
     const n = track.count;
     const flatTop = [];
-    const ramp = [];
-    for (let i = 0; i < n; i++) {
-        const h = track.y[i];
-        if (h > 7.2) flatTop.push(i);
-        else if (h > 1.2) ramp.push(i);
-    }
+    for (let i = 0; i < n; i++) if (onBench(i)) flatTop.push(i);
     if (!flatTop.length) return;
     const first = flatTop[0];
     const last = flatTop[flatTop.length - 1];
@@ -480,27 +487,6 @@ function buildBench(root, track, rng, q, { free }) {
         const lo = front(i);
         const hi = backL(i);
         g.add(at(box(hi - lo + 1, track.heightAt(i) - 0.2, 2.2, '#5e3b20'), -(lo + hi) / 2, (track.heightAt(i) - 0.2) / 2, 0));
-        root.add(g);
-    }
-
-    // trestles under the plank ramps
-    let lastS = -100;
-    for (const i of ramp) {
-        if (Math.abs(track.s[i] - lastS) < 16) continue;
-        lastS = track.s[i];
-        const h = track.y[i] - 0.15;
-        if (h < 1.5) continue;
-        const f = frame(Math.max(0, i - 1), Math.min(n - 1, i + 1));
-        const half = track.w[i] / 2;
-        const g = group();
-        g.position.set(f.cx, 0, f.cz);
-        g.rotation.y = f.yaw;
-        g.add(at(box(2 * half + 7, 1.1, 1.8, C.woodLight), 0, h - 0.55, 0));
-        for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-            const leg = at(box(0.9, h + 0.3, 0.9, C.woodLight), sx * (half + 2.6), h / 2 - 0.2, sz * 0.9);
-            leg.rotation.x = sz * 0.2;
-            g.add(leg);
-        }
         root.add(g);
     }
 
@@ -584,6 +570,203 @@ function buildBench(root, track, rng, q, { free }) {
         clamp.position.set(p.x, p.y, p.z);
         clamp.rotation.y = p.yaw + Math.PI / 2;
         root.add(clamp);
+    }
+}
+
+// ------------------------------------------------------------------ braces, the shelf tunnel, the loop rails, the crate tunnels
+
+/** The middle, heading and length of a path between samples i and j (for pieces that follow the road). */
+function segment(path, i, j) {
+    const dx = path.x[j] - path.x[i];
+    const dz = path.z[j] - path.z[i];
+    const len = Math.hypot(dx, dz) || 1;
+    return { cx: (path.x[i] + path.x[j]) / 2, cz: (path.z[i] + path.z[j]) / 2, yaw: Math.atan2(dx, dz), len };
+}
+
+const UP = new THREE.Vector3(0, 1, 0);
+/** A square beam from a to b (Vector3s). */
+function beam(a, b, size, color) {
+    const mesh = box(size, a.distanceTo(b), size, color);
+    mesh.position.copy(a).add(b).multiplyScalar(0.5);
+    mesh.quaternion.setFromUnitVectors(UP, b.clone().sub(a).normalize());
+    return mesh;
+}
+
+/**
+ * Wooden braces under every raised road (any layout): a post just outside the skirt from the floor to the shoulder and a diagonal strut,
+ * every 15 units on both sides; never on another road (bridges, crossings) and not where skip(path, i) (the workbench stands there).
+ */
+function buildBraces(root, track, skip) {
+    for (const path of track.paths) {
+        let next = -Infinity;
+        for (let i = 0; i < path.count; i++) {
+            if (path.rail[i] || path.s[i] < next) continue;
+            const y = path.y[i];
+            if (y < 3 || skip(path, i)) continue;
+            next = path.s[i] + 15;
+            const { nx, nz } = path.normalAt(i);
+            const edge = path.w[i] / 2 + BARRIER_OFFSET + 1.9 + 1.1;
+            const spread = Math.min(7, 1.5 + y * 0.3);
+            for (const side of [1, -1]) {
+                const top = new THREE.Vector3(path.x[i] + nx * side * edge, y + 0.1, path.z[i] + nz * side * edge);
+                const foot = new THREE.Vector3(path.x[i] + nx * side * (edge + spread), 0, path.z[i] + nz * side * (edge + spread));
+                if (track.isNearRoad(top.x, top.z, 1.2) || track.isNearRoad(foot.x, foot.z, 1.2)) continue;
+                root.add(beam(new THREE.Vector3(top.x, 0, top.z), top, 1.5, C.woodLight));
+                root.add(beam(foot, new THREE.Vector3(top.x, y * 0.62, top.z), 1.1, C.wood));
+                root.add(at(box(2.6, 1, 2.6, C.woodDark), top.x, y - 0.4, top.z));
+            }
+        }
+    }
+}
+
+/**
+ * A long steel shelf over a shortcut (branch style 'shelf'): two boards across the road (the lower one is the roof of the narrow passage),
+ * posts beside the barriers, tins and boxes on the boards, a sign at the way in. Posts that would stand on another road are left out.
+ */
+function buildShelfTunnel(root, track, branch, rng, { canLabels }) {
+    const n = branch.count;
+    const i0 = Math.round((n - 1) * 0.38);
+    const i1 = Math.round((n - 1) * 0.8);
+    if (i1 - i0 < 12) return;
+    const H1 = 13;
+    const H2 = 27;
+    const reach = i => branch.w[i] / 2 + BARRIER_OFFSET + 2.2;
+    const otherRoad = (x, z) => track.roadsNear(x, z, 1.2, (h, other) => other !== branch) !== null;
+    for (let i = i0; i < i1; i += 6) {
+        const j = Math.min(i + 6, i1);
+        const f = segment(branch, i, j);
+        const W = 2 * reach(i) + 3;
+        const g = group();
+        g.position.set(f.cx, branch.y[i], f.cz);
+        g.rotation.y = f.yaw;
+        for (const H of [H1, H2]) {
+            g.add(at(box(W, 1.6, f.len + 0.05, C.steel), 0, H, 0));
+            for (const sx of [-1, 1]) g.add(at(box(1, 3, f.len + 0.05, C.orange), sx * (W / 2), H, 0));
+        }
+        root.add(g);
+    }
+    for (let i = i0; i <= i1; i += 16) {
+        const k = Math.min(i, i1);
+        for (const side of [1, -1]) {
+            const p = branch.pointAt(k, side * (reach(k) + 1));
+            if (otherRoad(p.x, p.z)) continue;
+            root.add(at(box(2.6, H2 + 1.5, 2.6, C.steelDark), p.x, branch.y[k] + (H2 + 1.5) / 2, p.z));
+        }
+    }
+    // tins and boxes on the boards
+    const items = [
+        () => oilCan(rng.pick([C.blue, C.red, C.green]), rng.pick(canLabels)),
+        () => paintCan(rng.pick([C.red, C.blue, C.yellow, C.green, C.orange]), 8, 11),
+        () => cardboardBox(18, 10 + rng() * 6, 14),
+        () => group(at(cyl(4, 4, 12, rng.pick([C.yellow, C.white, C.red]), 10), 0, 6, 0), at(cyl(1.6, 1.6, 3, C.ink, 8), 0, 13.5, 0)),
+    ];
+    for (let i = i0 + 4; i < i1 - 3; i += 8 + Math.floor(rng() * 6)) {
+        for (const [H, low] of [[H2, false], [H1, true]]) {
+            if (low && rng() < 0.45) continue;
+            const make = low ? rng.pick([items[1], items[2], items[3]]) : rng.pick(items);
+            const o = make();
+            const p = branch.pointAt(i, (rng() * 2 - 1) * (reach(i) - 5));
+            o.position.set(p.x, branch.y[i] + H + 0.8, p.z);
+            o.rotation.y = rng() * Math.PI * 2;
+            root.add(o);
+        }
+    }
+    // the sign over the way in
+    const p = branch.pointAt(i0);
+    const W = 2 * reach(i0) + 3;
+    const plate = new THREE.Mesh(new THREE.PlaneGeometry(W - 2, 11), toon(0xffffff, { map: signTexture('ABKÜRZUNG', 'KOPF EINZIEHEN!', '#f6c638', '#e2392f') }));
+    plate.position.set(0, 0, -0.9);
+    plate.rotation.y = Math.PI;
+    const sign = group(plate, at(box(W - 1, 12, 1.2, C.ink), 0, 0, 0));
+    sign.position.set(p.x - branch.tx[i0] * 2.5, branch.y[i0] + H1 + 7, p.z - branch.tz[i0] * 2.5);
+    sign.rotation.y = p.yaw;
+    root.add(sign);
+}
+
+/** A looping as a bent steel rail: round rails on its walls, sleepers across the outside of the band, a warning sign before it. */
+function buildLoopRails(root, track, loop) {
+    const half = track.w[loop.entry] / 2 + BARRIER_OFFSET + 0.4;
+    const steel = toon(C.chrome);
+    const steps = 72;
+    for (const side of [1, -1]) {
+        const pts = [];
+        for (let k = 0; k <= steps; k++) {
+            const q = loopPoint(loop, (k / steps) * Math.PI * 2, side * half);
+            pts.push(new THREE.Vector3(q.x + q.ux * 2.5, q.y + q.uy * 2.5, q.z + q.uz * 2.5));
+        }
+        const rail = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 120, 0.75, 8), steel);
+        rail.castShadow = true;
+        root.add(rail);
+    }
+    // sleepers across the outside of the band (not on the bottom: there it lies on the floor)
+    const m = new THREE.Matrix4();
+    const N = new THREE.Vector3(loop.N[0], 0, loop.N[1]);
+    for (let k = 3; k < 22; k++) {
+        const q = loopPoint(loop, (k / 24) * Math.PI * 2, 0);
+        const U = new THREE.Vector3(q.ux, q.uy, q.uz);
+        const F = new THREE.Vector3(q.fx, q.fy, q.fz);
+        const sleeper = box(half * 2 + 1.5, 1.1, 1.8, C.steelDark);
+        m.makeBasis(N, U, F);
+        sleeper.quaternion.setFromRotationMatrix(m);
+        sleeper.position.set(q.x - q.ux * 1.1, q.y - q.uy * 1.1, q.z - q.uz * 1.1);
+        root.add(sleeper);
+    }
+    // the warning sign on the outside before the looping
+    const R = loop.radius;
+    const lateral = -(loop.D / 2 + track.w[loop.entry] / 2 + 9);
+    const x = loop.P[0] - loop.T[0] * R * 2.2 + loop.N[0] * lateral;
+    const z = loop.P[2] - loop.T[1] * R * 2.2 + loop.N[1] * lateral;
+    if (!track.isNearRoad(x, z, 4)) {
+        const plate = new THREE.Mesh(new THREE.PlaneGeometry(22, 11), toon(0xffffff, { map: signTexture('LOOPING!', 'VOLLGAS ODER NIX', '#e2392f', '#f6c638') }));
+        plate.position.set(0, 20, 0.8);
+        const sign = group(plate, at(box(23, 12, 1.2, C.ink), 0, 20, 0), at(box(1.6, 26, 1.6, C.steelDark), 0, 13, -0.8), at(box(6, 1, 6, C.steelDark), 0, 0.5, -0.8));
+        sign.position.set(x, loop.P[1], z);
+        sign.rotation.y = Math.atan2(loop.T[0], loop.T[1]) + Math.PI;
+        root.add(sign);
+    }
+}
+
+let stencilTexture = null;
+/** A crate tunnel: stencilled words on both sides, a crowbar and straw at the way in. */
+function dressCrate(root, track, tunnel) {
+    const path = tunnel.path;
+    const last = Math.min(path.closed ? tunnel.end : path.count - 1, tunnel.end);
+    const mid = path.wrap(Math.round((tunnel.start + last) / 2));
+    stencilTexture ??= canvasTexture(256, 96, (ctx, w, h) => {
+        ctx.clearRect(0, 0, w, h);
+        ctx.font = '58px Bangers, Impact, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = 'rgba(30,24,20,0.85)';
+        ctx.fillText('ZERBRECHLICH!', w / 2, h / 2 + 3);
+    });
+    const stencil = toon(0xffffff, { map: stencilTexture, transparent: true });
+    const width = path.w[mid] / 2 + BARRIER_OFFSET + 1.6;
+    for (const side of [1, -1]) {
+        const p = path.pointAt(mid, side * (width + 0.15));
+        const { nx, nz } = path.normalAt(mid);
+        const label = new THREE.Mesh(new THREE.PlaneGeometry(22, 8), stencil);
+        label.position.set(p.x, path.y[mid] + 5.5, p.z);
+        label.rotation.y = Math.atan2(nx * side, nz * side);
+        root.add(label);
+    }
+    // a crowbar leaning on the crate and some straw at the way in
+    const start = path.wrap(tunnel.start);
+    const p = path.pointAt(start, -(width + 1.5));
+    if (!track.isNearRoad(p.x, p.z, 0.8)) {
+        const bar = cyl(0.55, 0.55, 14, C.red, 6);
+        bar.position.set(p.x, path.y[start] + 6.2, p.z);
+        bar.rotation.set(0.25, path.pointAt(start).yaw, 0.2);
+        root.add(bar);
+    }
+    for (let k = 0; k < 7; k++) {
+        const side = k % 2 ? 1 : -1;
+        const q = path.pointAt(path.wrap(start - 2 + k), side * (width + 1.5 + (k % 3)));
+        if (track.isNearRoad(q.x, q.z, 0.8)) continue;
+        const straw = cone(1.6, 2.4 + (k % 3), C.yellow, 5);
+        straw.position.set(q.x, path.y[start] + 1.2, q.z);
+        straw.rotation.z = (k - 3) * 0.12;
+        root.add(straw);
     }
 }
 

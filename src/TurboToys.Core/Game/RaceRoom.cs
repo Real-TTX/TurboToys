@@ -109,6 +109,7 @@ public sealed class RaceRoom
     private readonly IReadOnlyList<CarLoadout> _botCars;
     private readonly IReadOnlyList<(string Name, CarLoadout Car, int Skill)>? _fixedBots;
     private DateTime[] _slotBack = [];
+    private LayoutInfo? _layout;
     private DateTime _startAt;
     private DateTime? _firstFinish;
     private DateTime _lastActivity;
@@ -122,6 +123,7 @@ public sealed class RaceRoom
         Code = code;
         Kind = kind;
         Track = track;
+        _layout = Layouts.Info(track);
         WeaponRules = weapons;
         _botCars = botCars;
         _fixedBots = fixedBots;
@@ -316,6 +318,7 @@ public sealed class RaceRoom
 
         Name = string.IsNullOrWhiteSpace(settings.Name) ? track.Name : settings.Name.Trim()[..Math.Min(40, settings.Name.Trim().Length)];
         Track = track;
+        _layout = Layouts.Info(track);
         Laps = Math.Clamp(settings.Laps, 1, 9);
         MaxPlayers = Math.Clamp(settings.MaxPlayers, Math.Max(1, Seats.Count(s => s.Kind == SeatKind.Human)), MaxSeats);
         Bots = Math.Clamp(settings.Bots, 0, MaxSeats - 1);
@@ -407,7 +410,7 @@ public sealed class RaceRoom
             s.WreckedUntil = null;
         }
 
-        var slots = Layouts.Find(Track.Layout)?.PickupSlots ?? 0;
+        var slots = _layout?.PickupSlots ?? 0;
         _slotBack = Enumerable.Repeat(DateTime.MinValue, slots).ToArray();
         BotDriver = HostPlayerId;
         Status = RoomStatus.Countdown;
@@ -610,7 +613,7 @@ public sealed class RaceRoom
         }
 
         var lapMs = (int)(now - seat.LapStartedAt).TotalMilliseconds;
-        if (lapMs < Layouts.MinLapMs(Track.Layout, seat.Car.Spec.TopSpeed))
+        if (lapMs < Layouts.MinLapMs(_layout, seat.Car.Spec.TopSpeed))
         {
             return [];
         }

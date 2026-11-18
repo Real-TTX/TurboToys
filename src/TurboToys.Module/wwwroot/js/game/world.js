@@ -43,11 +43,11 @@ function shade(hex, factor, tint) {
 
 /**
  * Builds a world.
- * @param {{ layout: string, timeOfDay?: 'day'|'dusk'|'night', quality?: 'high'|'medium'|'low' }} options
+ * @param {{ layout: string|object, timeOfDay?: 'day'|'dusk'|'night', quality?: 'high'|'medium'|'low' }} options
  * @returns {Promise<{ track: Track, theme: any, scene: THREE.Scene, sun: THREE.DirectionalLight, update: (dt:number, t:number, focus?:THREE.Vector3)=>void, startLights: THREE.Mesh[], night: boolean }>}
  */
 export async function buildWorld({ layout, timeOfDay = 'day', quality = 'high' }) {
-    const data = await layoutOf(layout);
+    const data = typeof layout === 'string' ? await layoutOf(layout) : layout; // a key of data/layouts.json or a layout itself (the editor's tracks)
     const track = new Track(data);
     const theme = await loadTheme(data.theme);
     const time = TIME[theme.forceTime ?? timeOfDay] ?? TIME.day;

@@ -13,7 +13,7 @@ public static class CupLogic
         var player = await db.Players.AsNoTracking().FirstAsync(p => p.Id == actor.PlayerId);
         var level = actor.IsAdmin ? int.MaxValue : Progression.LevelOf(player.Xp);
         var cups = await db.Cups.AsNoTracking().Where(c => c.IsEnabled && c.UpdateState != UpdateState.Deleted).OrderBy(c => c.SortOrder).ToListAsync();
-        var tracks = await db.Tracks.AsNoTracking().Where(t => t.UpdateState != UpdateState.Deleted).ToDictionaryAsync(t => t.Id);
+        var tracks = await db.Tracks.AsNoTracking().Where(t => t.UpdateState != UpdateState.Deleted && t.OwnerId == null).ToDictionaryAsync(t => t.Id);
         var runs = await db.CupRuns.AsNoTracking().Where(r => r.PlayerId == actor.PlayerId).ToListAsync();
         return cups.Select(c => Views.Cup(c, tracks, level,
             runs.Where(r => r.CupId == c.Id && r.Status == CupRunStatus.Running).OrderByDescending(r => r.Id).FirstOrDefault()
@@ -45,7 +45,7 @@ public static class CupLogic
         db.CupRuns.Add(run);
         db.ActingAs(actor.AuditId);
         await db.SaveChangesAsync();
-        var tracks = await db.Tracks.AsNoTracking().ToDictionaryAsync(t => t.Id);
+        var tracks = await db.Tracks.AsNoTracking().Where(t => t.OwnerId == null).ToDictionaryAsync(t => t.Id);
         return Views.CupRun(run, cup, tracks, Progression.LevelOf(player.Xp));
     }
 
@@ -79,7 +79,7 @@ public static class CupLogic
             throw new BusinessException("Dieser Pokal ist schon vorbei.");
         }
 
-        var track = await db.Tracks.AsNoTracking().FirstOrDefaultAsync(t => t.Id == ids[run.RaceIndex]) ?? throw new BusinessException("Die Strecke gibt es nicht mehr.");
+        var track = await db.Tracks.AsNoTracking().FirstOrDefaultAsync(t => t.Id == ids[run.RaceIndex] && t.OwnerId == null) ?? throw new BusinessException("Die Strecke gibt es nicht mehr.");
         var catalog = await ContentLogic.CarsAsync(db);
         var bots = Views.CupBots(CupRules.Read(run.Standings), catalog, (int)(run.Id % int.MaxValue));
         return (run, run.Cup, track, bots);

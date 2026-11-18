@@ -17,7 +17,8 @@ public sealed record ShopItem(CarView Car, bool Owned, bool Locked, CarSpec Spec
 public sealed record GarageView(int Money, int Level, long? SelectedId, IReadOnlyList<GarageCarView> Cars, IReadOnlyList<ShopItem> Shop, IReadOnlyList<string> Paints,
     IReadOnlyList<string> Decals);
 
-public sealed record TrackView(long Id, string Layout, string Name, string Description, int Laps, string TimeOfDay, int UnlockLevel, bool Locked);
+/// <summary>A track in the lists; <see cref="Custom"/> = a player's own track (built in the track editor, not yet released for everyone).</summary>
+public sealed record TrackView(long Id, string Layout, string Name, string Description, int Laps, string TimeOfDay, int UnlockLevel, bool Locked, bool Custom);
 
 public sealed record CupRunView(Guid Token, long CupId, string CupName, int RaceIndex, int Races, string Status, IReadOnlyList<CupStanding> Standings, int? Place, int PrizeWon,
     TrackView? NextTrack);
@@ -74,9 +75,12 @@ public static class Views
     }
 
     public static TrackView Track(Track t, int level) =>
-        new(t.Id, t.Layout, t.Name, t.Description, t.Laps, t.TimeOfDay.ToString(), t.UnlockLevel, level < t.UnlockLevel);
+        new(t.Id, t.Layout, t.Name, t.Description, t.Laps, t.TimeOfDay.ToString(), t.UnlockLevel, level < t.UnlockLevel, t.OwnerId is not null);
 
-    public static TrackRef TrackRef(Track t) => new(t.Id, t.Layout, t.Name, t.TimeOfDay.ToString(), t.Laps);
+    public static TrackRef TrackRef(Track t) => new(t.Id, t.Layout, t.Name, t.TimeOfDay.ToString(), t.Laps, DesignRules.DesignOf(t));
+
+    public static DesignView Design(Track t) =>
+        new(t.Id, t.Name, t.Layout, t.TimeOfDay.ToString(), t.Laps, t.UpdateDate, DesignRules.DesignOf(t) ?? throw new InvalidOperationException("The track has no design."));
 
     public static CupRunView CupRun(CupRun run, Cup cup, IReadOnlyDictionary<long, Track> tracks, int level)
     {

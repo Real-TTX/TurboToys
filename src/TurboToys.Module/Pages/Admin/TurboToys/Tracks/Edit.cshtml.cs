@@ -36,6 +36,14 @@ public sealed class EditModel(AppDbContext db) : AppPageModel(db)
 
     public bool IsNew => Id == 0;
 
+    /// <summary>A track of the track editor (its form and world come from the design, not from the layout select).</summary>
+    public bool HasDesign { get; private set; }
+
+    /// <summary>The player who built the track (null = official).</summary>
+    public long? OwnerId { get; private set; }
+
+    public string? OwnerName { get; private set; }
+
     public IReadOnlyList<Choice> Layouts { get; } = Game.Layouts.List.Select(l => new Choice(l.Key, l.Name)).ToList();
 
     public IReadOnlyList<Choice> Times { get; } =
@@ -52,20 +60,21 @@ public sealed class EditModel(AppDbContext db) : AppPageModel(db)
             return Page();
         }
 
-        var track = await ContentLogic.GetTrackAsync(Db, Me, Id);
-        if (track is null)
+        var row = await ContentLogic.GetTrackAsync(Db, Me, Id);
+        if (row is null)
         {
             return NotFound();
         }
 
+        var track = row.Track;
         Name = track.Name;
         Description = track.Description;
-        Layout = track.Layout;
         TimeOfDay = track.TimeOfDay;
         Laps = track.Laps;
         UnlockLevel = track.UnlockLevel;
         SortOrder = track.SortOrder;
         IsEnabled = track.IsEnabled;
+        Show(row);
         return Page();
     }
 
@@ -75,7 +84,15 @@ public sealed class EditModel(AppDbContext db) : AppPageModel(db)
             var id = await ContentLogic.SaveTrackAsync(Db, Me, new TrackInput(Id, Layout, Name, Description ?? string.Empty, Laps, TimeOfDay, UnlockLevel, SortOrder, IsEnabled));
             Flash(IsNew ? "Die Strecke wurde angelegt." : "Gespeichert.");
             return RedirectToPage(new { id });
-        });
+        }, ReloadAsync);
+
+    public async Task<IActionResult> OnPostPublishAsync()
+        => await TryAsync(async () =>
+        {
+            await ContentLogic.PublishTrackAsync(Db, Me, Id);
+            Flash("Die Strecke ist jetzt für alle freigegeben.");
+            return RedirectToPage(new { id = Id });
+        }, ReloadAsync);
 
     public async Task<IActionResult> OnPostDeleteAsync()
         => await TryAsync(async () =>
@@ -83,5 +100,25 @@ public sealed class EditModel(AppDbContext db) : AppPageModel(db)
             await ContentLogic.DeleteTrackAsync(Db, Me, Id);
             Flash("Die Strecke wurde gelöscht.");
             return RedirectToPage("Index");
-        });
+        }, ReloadAsync);
+
+    /// <summary>After an error the form is shown again: the parts that are not posted (design, builder, world) come from the track.</summary>
+    private async Task ReloadAsync()
+    {
+        if (!IsNew && await ContentLogic.GetTrackAsync(Db, Me, Id) is { } row)
+        {
+            Show(row);
+        }
+    }
+
+    private void Show(ContentLogic.TrackRow row)
+    {
+        HasDesign = row.Track.Design is not null;
+        OwnerId = row.Track.OwnerId;
+        OwnerName = row.OwnerName;
+        if (HasDesign || HttpMethods.IsGet(Request.Method))
+        {
+            Layout = row.Track.Layout;
+        }
+    }
 }

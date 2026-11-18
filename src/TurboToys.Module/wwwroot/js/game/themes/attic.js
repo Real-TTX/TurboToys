@@ -1,7 +1,10 @@
 // TurboToys · themes/attic.js – "Dachboden bei Nacht": a dusty attic at night under a steep roof. Moonlight falls through a round gable window,
 // candles line the plank road, strings of warm bulbs hang across it between old posts, a lantern glows on a trunk. Around the track: trunks
 // and suitcases, ghostly sheets over furniture, a rocking horse, a dress form, stacks of old books, labelled boxes, cobwebs and floating dust.
-// The road climbs onto a plateau of giant old books (y ≈ 5) in its first third.
+// The official lap is a figure eight: after the looping it climbs onto a mountain of steamer trunks and suitcases (y = 16), crosses itself on
+// a bridge, dives through an old stove pipe and either takes the long hairpin round a luggage hill or the narrow shortcut through a trunk.
+// Raised roads, tunnels and loopings of any layout (also players' custom tracks) are dressed from the track data; hand-placed pieces keep
+// their spots only on the official layout (track.key === 'attic'), elsewhere they go to free spots off the road.
 
 import * as THREE from 'three';
 import { toon, flat, fx, fxLayer, box, cyl, sphere, at, group, canvasTexture, LAYER_FX } from '../render/toon.js';
@@ -9,10 +12,11 @@ import { scatter, lamp } from './common.js';
 import {
     A, BOOK_COLORS, sunkenFloor, floorBoards, roofBoards, brickTexture, windowTexture, webTexture, boxLabel, portraitTexture, book, bookStack,
     openBook, trunk, suitcase, cardboardBox, toyChest, drape, rockingHorse, mannequin, lantern, gramophone, birdcage, painting, rolledCarpet,
-    floorLamp, chimney, candle,
+    floorLamp, chimney, candle, flatTrunk, travelSticker,
 } from './attic-props.js';
 
 const KNEE = 40; // height of the knee walls
+const HILL = [104, 131]; // the luggage hill inside the hairpin of the official layout
 const RIDGE = 262; // height of the ridge
 const SUN = new THREE.Vector3(182, 150, 18).normalize(); // towards the round window (the moon)
 
@@ -108,28 +112,34 @@ export default {
         root.add(sunkenFloor(track, { size: 1200, tile: 60, material: floorMaterial }));
         buildShell(root, room, roofY, rng);
 
-        // ---- the plateau of giant books and the book stacks under the ramps
+        // ---- the luggage mountains and book stacks under every raised road
         const glow = { flames: [], bulbs: [] };
-        buildPlateau(root, track, rng, glow);
+        buildRaised(root, track, rng, glow);
 
-        // ---- candles along both road edges (on the floor; the plateau places its own)
+        // ---- candles along both road edges of every path (on the floor; the raised parts place their own)
         const n = track.count;
         const candleStep = 13;
-        for (const side of [1, -1]) {
-            let next = side > 0 ? 0 : candleStep / 2;
-            for (let i = 0; i < n; i++) {
-                if (track.s[i] < next) continue;
-                next += candleStep;
-                if (track.y[i] > 0.3) continue;
-                if (track.s[i] < 16 || track.s[i] > track.length - 16) continue; // the start gantry
-                const p = track.pointAt(i, side * (track.w[i] / 2 + 4.6));
-                if (track.isNearRoad(p.x, p.z, 3.2)) continue;
-                const c = candle(rng);
-                c.position.set(p.x, 0, p.z);
-                root.add(c);
-                glow.flames.push(new THREE.Vector3(p.x, c.userData.flameY, p.z));
+        for (const path of track.paths) {
+            for (const side of [1, -1]) {
+                let next = side > 0 ? 0 : candleStep / 2;
+                for (let i = 0; i < path.count; i++) {
+                    if (path.s[i] < next) continue;
+                    next += candleStep;
+                    if (path.rail[i] || path.y[i] > 0.3) continue;
+                    if (path === track && (track.s[i] < 16 || track.s[i] > track.length - 16)) continue; // the start gantry
+                    if (path !== track && (i < 14 || i > path.count - 14)) continue; // the forks
+                    const p = path.pointAt(i, side * (path.w[i] / 2 + 4.6));
+                    if (track.isNearRoad(p.x, p.z, 3.2) || nearLoop(track, p.x, p.z, 6)) continue;
+                    const c = candle(rng);
+                    c.position.set(p.x, 0, p.z);
+                    root.add(c);
+                    glow.flames.push(new THREE.Vector3(p.x, c.userData.flameY, p.z));
+                }
             }
         }
+
+        // ---- the set pieces of the tunnels: a steamer trunk the shortcut drives through, the old stove pipe
+        buildTunnelDressing(root, track, rng, roofY);
 
         // ---- strings of bulbs across the road between old posts; the lights of the world
         const lights = [];
@@ -137,10 +147,13 @@ export default {
         const lightAt = new Set([2, 5, 8]);
         for (let k = 0; k < garlands; k++) {
             const i = Math.floor(((k + 0.5) / garlands) * n);
+            if (track.rail[i] || track.loopAt(track.wrap(i + 20)) || track.loopAt(track.wrap(i - 20))) continue;
             const half = track.w[i] / 2 + 17;
             const a = track.pointAt(i, half);
             const c = track.pointAt(i, -half);
-            if (!free(a.x, a.z, 1) || !free(c.x, c.z, 1)) continue;
+            // posts keep clear of the luggage under raised roads, of the loopings and of the luggage hill (official layout)
+            const postOk = p => free(p.x, p.z, 8) && !nearLoop(track, p.x, p.z, 8) && !(track.key === 'attic' && Math.hypot(p.x - HILL[0], p.z - HILL[1]) < 36);
+            if (!postOk(a) || !postOk(c)) continue;
             const base = Math.max(0, track.heightAt(i));
             for (const p of [a, c]) {
                 const top = roofY(p.z);
@@ -168,10 +181,31 @@ export default {
             }
         }
 
-        // ---- the lantern on a trunk by the start
+        // ---- the lantern on a trunk beside the start (on the side with more room)
+        const official = track.key === 'attic';
+        /** A free spot anywhere in the room for a piece of footprint r and height (custom tracks: no hand-placed coordinates). */
+        const anywhere = (r, height) => {
+            for (let k = 0; k < 300; k++) {
+                const x = rng.range(room.minX + r + 10, room.maxX - r - 10);
+                const z = rng.range(room.minZ + r + 10, room.maxZ - r - 10);
+                if (free(x, z, r + 6) && roofY(z) > height + 8 && !nearLoop(track, x, z, r + 4)) return { x, z };
+            }
+            return null;
+        };
+        /** Places a big piece: at its hand-made spot on the official layout, anywhere free on other tracks; yaw = null faces the road. */
+        const place = (object, x, z, r, yaw, height) => {
+            const p = official ? { x, z } : anywhere(r, height);
+            if (!p) return null;
+            return put(object, p.x, p.z, r, yaw ?? faceRoad(p.x, p.z) + (rng() - 0.5) * 0.4, height);
+        };
         const lanternGlow = flat('#ffc860');
         const lanternTrunk = group(trunk(A.green), at(lantern(lanternGlow), 8, 30, 2));
-        const lt = put(lanternTrunk, 22, -46, 32, 0.08, 60);
+        let lt = null;
+        {
+            const i = Math.min(n - 1, 24);
+            const outside = [1, -1].map(side => track.pointAt(i, side * (track.w[i] / 2 + 42))).find(p => free(p.x, p.z, 32));
+            if (outside) lt = put(lanternTrunk, outside.x, outside.z, 32, outside.yaw + 0.08, 60);
+        }
         if (lt) {
             const l = lamp('#ffb050', 1200, 140);
             l.position.set(lt.position.x, 42, lt.position.z + 8);
@@ -179,23 +213,32 @@ export default {
             glow.lantern = l;
         }
 
-        // ---- the big characters
+        // ---- the big characters: ghostly furniture on the stage inside the figure eight, the rest around the room
         const labels = ['WEIHNACHTEN', 'OMAS GESCHIRR', 'KRAM', 'BÜCHER', 'VORSICHT GLAS!', 'FOTOS 1970', 'NICHT ÖFFNEN!'].map(t => toon(0xffffff, { map: boxLabel(t) }));
-        const ghost = [['wardrobe', 40, 64, 40, 165], ['chair', 92, 58, 45, 70], ['table', -20, 50, 50, 50], ['clock', -110, 40, 24, 200], ['wardrobe', -185, -40, 40, 165], ['chair', 205, 170, 45, 70]];
-        for (const [kind, x, z, r, h] of ghost) put(drape(kind), x, z, r, faceRoad(x, z) + (rng() - 0.5) * 0.6, h);
-        put(rockingHorse(), -64, 50, 34, faceRoad(-64, 50) + 1.2, 75);
-        put(mannequin(), 214, 32, 24, faceRoad(214, 32), 135);
-        put(mannequin('#c8a882'), -200, 128, 24, 0.6, 135);
-        put(gramophone(), 70, -58, 26, faceRoad(70, -58), 60);
-        put(birdcage(), 128, -52, 22, 0.4, 90);
-        put(toyChest(toon(0xffffff, { map: boxLabel('SPIELZEUG', '#f6c638') })), -78, -56, 34, faceRoad(-78, -56), 45);
-        put(rolledCarpet(110), -150, -60, 58, 0.3, 20);
-        put(rolledCarpet(90, '#2f4a6a'), 90, 200, 48, 0.1, 20);
-        put(floorLamp(), -150, 160, 22, 0, 110);
-        put(painting(toon(0xffffff, { map: canvasTexture(128, 160, portraitTexture) })), 40, room.minZ + 10, 34, 0, 80);
-        put(painting(toon(0xffffff, { map: canvasTexture(128, 160, portraitTexture) }), 40, 50), -60, room.maxZ - 10, 30, Math.PI, 70);
+        const ghost = [['wardrobe', 70, -10, 40, 165], ['table', 125, 30, 50, 50], ['chair', 175, 0, 45, 70], ['clock', 60, 55, 24, 200], ['wardrobe', 420, -80, 40, 165], ['chair', 230, 200, 45, 70]];
+        for (const [kind, x, z, r, h] of ghost) place(drape(kind), x, z, r, null, h);
+        place(rockingHorse(), 200, -95, 34, null, 75);
+        place(mannequin(), 120, -110, 24, null, 135);
+        place(mannequin('#c8a882'), 420, 110, 24, 0.6, 135);
+        place(gramophone(), -60, -40, 26, null, 60);
+        // the bird cage stands in the middle of the luggage mountain's ring (official layout: small enough to fit)
+        const cage = birdcage();
+        cage.scale.setScalar(0.85);
+        if (official && free(332, 8, 14)) {
+            cage.position.set(332, 0, 8);
+            cage.rotation.y = 0.4;
+            root.add(cage);
+        } else {
+            place(cage, 0, 0, 16, 0.4, 70);
+        }
+        place(toyChest(toon(0xffffff, { map: boxLabel('SPIELZEUG', '#f6c638') })), -60, 150, 34, null, 45);
+        place(rolledCarpet(110), 300, 150, 58, 0.3, 20);
+        place(rolledCarpet(90, '#2f4a6a'), 100, 230, 48, 0.1, 20);
+        place(floorLamp(), 430, 20, 22, 0, 110);
+        put(painting(toon(0xffffff, { map: canvasTexture(128, 160, portraitTexture) })), official ? 120 : room.minX + 120, room.minZ + 10, 34, 0, 80);
+        put(painting(toon(0xffffff, { map: canvasTexture(128, 160, portraitTexture) }), 40, 50), official ? 60 : room.minX + 160, room.maxZ - 10, 30, Math.PI, 70);
         const chim = chimney(RIDGE, toon(0xffffff, { map: canvasTexture(256, 256, brickTexture, { repeat: [2, 11] }) }));
-        put(chim, room.minX + 70, room.ridgeZ + 10, 34, 0, 0);
+        put(chim, room.minX + 60, room.ridgeZ + 10, 34, 0, 0);
 
         // stacks of trunks and suitcases (tall: away from the road)
         const trunkColors = [A.green, A.red, A.navy, A.leather, A.plum, '#6a5a3a'];
@@ -220,7 +263,7 @@ export default {
             }
             return g;
         };
-        for (const [x, z] of [[-130, -40], [150, -50], [-40, -60], [180, 130], [-170, 90], [40, 175], [-90, 170], [230, -40]]) put(stack(rng), x, z, 36, faceRoad(x, z) + (rng() - 0.5) * 0.4, 75);
+        for (const [x, z] of [[-60, -110], [260, -110], [420, 60], [330, 120], [-70, 90], [170, 210], [20, 220], [400, -40]]) place(stack(rng), x, z, 36, null, 75);
         // labelled boxes in towers
         const tower = (r) => {
             const g = group();
@@ -237,7 +280,10 @@ export default {
             }
             return g;
         };
-        for (const [x, z] of [[100, -70], [-100, -75], [0, -80], [120, 190], [-30, 195], [-200, 20], [240, 90], [-140, 205]]) put(tower(rng), x, z, 30, faceRoad(x, z), 95);
+        for (const [x, z] of [[30, -120], [330, -100], [440, 160], [-60, 200], [270, 230], [-80, 20], [380, 200], [110, -130]]) place(tower(rng), x, z, 30, null, 95);
+
+        // ---- the official layout: the luggage hill inside the hairpin that the trunk shortcut cuts off
+        if (official) buildLuggageHill(root, track, rng, HILL[0], HILL[1], lanternGlow);
 
         // ---- more things scattered: medium further out, low things near the road
         scatter(root, track, {
@@ -302,6 +348,134 @@ function wire(a, b) {
     mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
     mesh.castShadow = false;
     return mesh;
+}
+
+/** True when (x, z) lies within margin of a looping's circle or its frame of posts (they stand beside the lap line). */
+function nearLoop(track, x, z, margin = 0) {
+    for (const l of track.loops) {
+        const dx = x - l.P[0];
+        const dz = z - l.P[2];
+        const along = dx * l.T[0] + dz * l.T[1];
+        const lateral = dx * l.N[0] + dz * l.N[1];
+        if (Math.abs(along) < l.radius + 2 + margin && Math.abs(lateral) < l.D / 2 + track.w[l.entry] / 2 + 5 + margin) return true;
+    }
+    return false;
+}
+
+// ------------------------------------------------------------------ the set pieces of the tunnels
+
+/**
+ * Dresses the tunnels the builder puts over the road: a crate on a branch of style 'trunk' becomes an old steamer trunk (painted shell,
+ * leather straps, brass corners, lock and travel stickers); a pipe gets iron clamps and a stove pipe rising from its middle to the roof.
+ */
+function buildTunnelDressing(root, track, rng, roofY) {
+    const H = 10.5; // the builder's tunnel height
+    const width = (path, i) => path.w[i] / 2 + 1.9 + 1.6; // the builder's tunnel half width (BARRIER_OFFSET + 1.6)
+    for (const t of track.tunnels) {
+        const path = t.path;
+        const from = t.start;
+        const to = Math.min(path.closed ? t.end : path.count - 1, t.end);
+        const a = path.pointAt(path.wrap(from));
+        const b = path.pointAt(path.wrap(to));
+        const len = Math.hypot(b.x - a.x, b.z - a.z);
+        const mid = path.wrap(Math.round((from + to) / 2));
+        const m = path.pointAt(mid);
+        // only a straight tunnel gets the trunk shell (a curved one keeps the builder's look)
+        const yaw = Math.atan2(b.x - a.x, b.z - a.z);
+        const bend = Math.abs((m.x - (a.x + b.x) / 2) * Math.cos(yaw) - (m.z - (a.z + b.z) / 2) * Math.sin(yaw));
+        const base = Math.min(a.y, b.y, m.y);
+        if (t.style === 'crate' && path.style === 'trunk' && bend < 1.5) {
+            const wd = Math.max(width(path, path.wrap(from)), width(path, path.wrap(to))) + 0.25;
+            const color = rng.pick([A.navy, A.red, A.green]);
+            const shell = group();
+            shell.position.set((a.x + b.x) / 2, base, (a.z + b.z) / 2);
+            shell.rotation.y = yaw;
+            for (const sx of [-1, 1]) {
+                shell.add(at(box(1.2, H + 0.4, len + 0.4, color), sx * wd, (H + 0.4) / 2 - 0.05, 0));
+                // the lid's rim and the bottom rim
+                shell.add(at(box(1.8, 1.2, len + 0.8, A.woodDark), sx * (wd + 0.3), H - 2.6, 0));
+                shell.add(at(box(1.8, 1.2, len + 0.8, A.woodDark), sx * (wd + 0.3), 0.6, 0));
+            }
+            // a domed lid: a flattened half cylinder along the trunk
+            const lid = new THREE.Mesh(new THREE.CylinderGeometry(wd + 0.6, wd + 0.6, len + 0.4, 18, 1, false, -Math.PI / 2, Math.PI), toon(color));
+            lid.rotation.x = -Math.PI / 2;
+            lid.scale.z = 0.32;
+            lid.position.y = H + 0.3;
+            lid.castShadow = true;
+            shell.add(lid);
+            // leather straps over the lid, brass corners, the lock, travel stickers
+            for (const sz of [-0.3, 0.3]) {
+                for (const sx of [-1, 1]) shell.add(at(box(1.6, H + 0.6, 3.2, A.leather), sx * (wd + 0.45), H / 2, sz * len));
+                const strap = new THREE.Mesh(new THREE.CylinderGeometry(wd + 1.1, wd + 1.1, 3.2, 18, 1, true, -Math.PI / 2, Math.PI), toon(A.leather, { side: THREE.DoubleSide }));
+                strap.rotation.x = -Math.PI / 2;
+                strap.scale.z = 0.36;
+                strap.position.set(0, H + 0.3, sz * len);
+                shell.add(strap);
+            }
+            for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+                shell.add(at(box(2.8, 3.4, 2.8, A.brass), sx * (wd + 0.3), H - 1.4, sz * (len / 2 - 0.6)));
+                shell.add(at(box(2.8, 3.4, 2.8, A.brass), sx * (wd + 0.3), 1.7, sz * (len / 2 - 0.6)));
+            }
+            for (const sx of [-1, 1]) {
+                shell.add(at(box(1, 5, 4.4, A.brass), sx * (wd + 0.7), H - 3.4, 0));
+                const sticker = new THREE.Mesh(new THREE.PlaneGeometry(9, 6), toon(0xffffff, { map: travelSticker(sx > 0 ? 'BON VOYAGE' : 'TURBO-EXPRESS', sx > 0 ? '#b8322a' : '#2f4166') }));
+                sticker.position.set(sx * (wd + 0.66), H * 0.45, -sx * len * 0.16);
+                sticker.rotation.set(0, sx * Math.PI / 2, sx * 0.08);
+                shell.add(sticker);
+            }
+            root.add(shell);
+        } else if (t.style === 'pipe') {
+            const iron = toon(A.iron);
+            // clamps every ~10 units (half rings over the arch)
+            for (let k = from + 5; k < to - 3; k += 10) {
+                const i = path.wrap(k);
+                const p = path.pointAt(i);
+                const wd = width(path, i) + 0.5;
+                const clamp = new THREE.Mesh(new THREE.TorusGeometry(wd, 0.55, 6, 20, Math.PI), iron);
+                clamp.scale.y = (H + 0.5) / wd;
+                clamp.position.set(p.x, p.y, p.z);
+                clamp.rotation.y = p.yaw;
+                root.add(clamp);
+            }
+            // the stove pipe rising from the middle to the roof (unless a road runs above)
+            const top = roofY(m.z);
+            if (!track.roadsNear(m.x, m.z, 6, h => h > m.y + 2)) {
+                const pipeH = top - (m.y + H) + 4;
+                root.add(at(cyl(3.6, 3.6, pipeH, '#7c858d', 14), m.x, m.y + H + pipeH / 2 - 0.6, m.z));
+                root.add(at(cyl(4.6, 4.6, 2, A.iron, 14), m.x, m.y + H + 1.2, m.z));
+                for (let y = m.y + H + 14; y < top - 6; y += 22) root.add(at(cyl(4.2, 4.2, 1.2, A.iron, 14), m.x, y, m.z));
+                // a damper handle
+                const handle = at(box(9, 0.8, 0.8, A.iron), m.x, m.y + H + 9, m.z);
+                handle.rotation.y = m.yaw;
+                root.add(handle);
+            }
+        }
+    }
+}
+
+/** The luggage hill inside the hairpin of the official layout: trunks, suitcases, books and a lantern on top (no light, a glowing core). */
+function buildLuggageHill(root, track, rng, cx, cz, glowMaterial) {
+    // only when it really fits (the layout may change): every corner of its footprint keeps off the road
+    for (const [x, z] of [[-24, -14], [24, -14], [-24, 14], [24, 14], [0, 0]]) if (track.isNearRoad(cx + x, cz + z, 4)) return;
+    const hill = group();
+    const colors = [A.green, A.red, A.navy, A.leather, A.plum, '#6a5a3a'];
+    hill.add(at(trunk(A.red, 40, 24, 26), 0, 0, 0));
+    const s1 = at(suitcase(A.navy, 34, 10, 22), -1, 24, 1);
+    s1.rotation.y = 0.15;
+    const s2 = at(suitcase(A.green, 28, 9, 19), 2, 34, -1);
+    s2.rotation.y = -0.2;
+    const s3 = at(suitcase(rng.pick(colors), 22, 8, 16), 0, 43, 0);
+    s3.rotation.y = 0.35;
+    hill.add(s1, s2, s3);
+    const books = bookStack(rng, 3, 0.9);
+    books.position.set(-5, 51, 0);
+    hill.add(books);
+    hill.add(at(lantern(glowMaterial), 6, 51, 1));
+    // a hatbox at the foot
+    hill.add(at(cyl(6.5, 6.5, 8, '#d98a8a', 18), 14, 4, 15), at(cyl(6.9, 6.9, 1.2, '#8a3a4a', 18), 14, 8.4, 15));
+    hill.position.set(cx, 0, cz);
+    hill.rotation.y = 0.05;
+    root.add(hill);
 }
 
 // ------------------------------------------------------------------ the roof, the gables, the window
@@ -420,95 +594,119 @@ function buildShell(root, room, roofY, rng) {
     void rng;
 }
 
-// ------------------------------------------------------------------ the plateau of giant books
+// ------------------------------------------------------------------ what carries the raised roads: luggage mountains and book stacks
 
-function buildPlateau(root, track, rng, glow) {
-    const n = track.count;
-    const flatTop = [];
-    for (let i = 0; i < n; i++) if (track.y[i] > 4.3) flatTop.push(i);
-    const frame = (i, j) => {
-        const dx = track.x[j] - track.x[i];
-        const dz = track.z[j] - track.z[i];
-        const len = Math.hypot(dx, dz) || 1;
-        return { cx: (track.x[i] + track.x[j]) / 2, cz: (track.z[i] + track.z[j]) / 2, yaw: Math.atan2(dx, dz), len };
+/**
+ * Supports under every raised road (main path and branches, any layout): where the road is high (y ≥ 7) a row of flat-topped steamer trunks
+ * (with a suitcase on top when very high) lies across it, its top just under the road; on the ramps stacks of old books stand at both edges.
+ * Nothing is built where another, lower road passes below (bridges stay open). Candles stand on the supports.
+ */
+function buildRaised(root, track, rng, glow) {
+    const stickers = [['PARIS', '#b8322a'], ['WIEN', '#2f4166'], ['KAIRO', '#c99a2e'], ['ROMA', '#3f6a3a'], ['NIZZA', '#5a3a6a'], ['OSLO', '#2a5a5a']]
+        .map(([text, color]) => toon(0xffffff, { map: travelSticker(text, color) }));
+    const trunkColors = [A.green, A.red, A.navy, A.leather, A.plum, '#6a5a3a', '#7a4a2a'];
+    const below = (x, z, top, margin) => track.roadsNear(x, z, margin, height => height < top - 2) !== null;
+    const candleAt = (x, y, z) => {
+        const c = candle(rng);
+        c.position.set(x, y, z);
+        root.add(c);
+        glow.flames.push(new THREE.Vector3(x, y + c.userData.flameY, z));
     };
-    if (flatTop.length) {
-        const first = flatTop[0];
-        const last = flatTop[flatTop.length - 1];
-        // two layers of giant books lying across the road, the upper one shifted by half a book
-        for (const layer of [0, 1]) {
-            const chunk = 11;
-            for (let i = first - (layer ? Math.floor(chunk / 2) : 0); i < last; i += chunk) {
-                const i0 = Math.max(first, i);
-                const i1 = Math.min(last, i + chunk);
-                if (i1 - i0 < 2) continue;
-                const f = frame(i0, i1);
-                let top = Infinity;
-                for (let k = i0; k <= i1; k++) top = Math.min(top, track.heightAt(k));
-                top -= 0.06;
-                const t = layer ? top * 0.48 : top * 0.52;
-                const y = layer ? top - t : 0;
-                const w = track.w[i0] + 13 + rng() * 3;
-                const color = rng.pick(BOOK_COLORS);
+    for (const path of track.paths) {
+        const n = path.count;
+        const high = i => !path.rail[i] && path.y[i] >= 7;
+
+        // ---- the luggage: chunks of road, shorter on slopes (the trunks step up under the ramp)
+        let chunks = 0;
+        for (let i = 0; i < n;) {
+            if (!high(i)) {
+                i++;
+                continue;
+            }
+            const steep = Math.abs(path.y[path.wrap(i + 6)] - path.y[i]) > 0.5;
+            const want = steep ? 9 : 20 + Math.floor(rng() * 6);
+            let j = i;
+            while (j + 1 < n && j - i < want && high(j + 1)) j++;
+            if (j - i < 3) {
+                i = j + 1;
+                continue;
+            }
+            let top = Infinity;
+            for (let k = i - 1; k <= j + 1; k++) top = Math.min(top, path.y[path.wrap(k)]);
+            top -= 0.06;
+            const across = Math.max(path.w[i], path.w[j]) + 17 + rng() * 3;
+            const dx = path.x[j] - path.x[i];
+            const dz = path.z[j] - path.z[i];
+            const len = Math.hypot(dx, dz) + 0.6;
+            const cx = (path.x[i] + path.x[j]) / 2;
+            const cz = (path.z[i] + path.z[j]) / 2;
+            const yaw = Math.atan2(dx, dz);
+            // the footprint must not cover a lower road (a bridge): test its corners, edges and centre
+            const fx = Math.cos(yaw);
+            const fz = -Math.sin(yaw);
+            let blocked = false;
+            for (const a of [-0.5, 0, 0.5]) for (const b of [-0.5, -0.25, 0, 0.25, 0.5]) {
+                if (below(cx + fx * across * b + Math.sin(yaw) * len * a, cz + fz * across * b + Math.cos(yaw) * len * a, top, 4)) blocked = true;
+            }
+            if (!blocked && top > 1) {
                 const g = group();
-                g.position.set(f.cx, y, f.cz);
-                g.rotation.y = f.yaw + (rng() - 0.5) * 0.05;
-                const shift = (rng() - 0.5) * 2;
-                g.add(at(box(w, t, f.len + 0.4, color), shift, t / 2, 0));
-                const pagesSide = rng() < 0.5 ? 1 : -1;
-                g.add(at(box(0.8, t * 0.72, (f.len + 0.4) * 0.92, A.cream), shift + pagesSide * (w / 2 + 0.1), t / 2, 0));
-                g.add(at(box(1.2, t + 0.3, f.len + 0.6, '#d1a64a'), shift - pagesSide * (w / 2 - 0.4), t / 2, 0));
+                g.position.set(cx, 0, cz);
+                g.rotation.y = yaw;
+                const upper = top >= 12 ? Math.min(12, Math.max(6, top * 0.36)) : 0;
+                const lower = top - upper;
+                const color = rng.pick(trunkColors);
+                g.add(flatTrunk(color, across, lower, len, rng() < 0.6 ? [rng.pick(stickers), rng.pick(stickers)] : null));
+                if (upper > 0) {
+                    const s = suitcase(rng.pick(trunkColors.filter(c => c !== color)), len - 0.6, upper, across - 2 - rng() * 3);
+                    s.rotation.y = rng() < 0.5 ? Math.PI / 2 : -Math.PI / 2;
+                    s.position.set((rng() - 0.5) * 1.5, lower, 0);
+                    g.add(s);
+                }
                 root.add(g);
+                // candles on the trunk's ends beside the road (every second trunk, alternating sides)
+                chunks++;
+                if (chunks % 2 === 0) {
+                    const m = Math.round((i + j) / 2);
+                    const side = chunks % 4 === 0 ? 1 : -1;
+                    const p = path.pointAt(m, side * (path.w[m] / 2 + 5.6));
+                    candleAt(p.x, top, p.z);
+                }
             }
+            i = j + 1;
         }
-        // candles on the plateau's edges
-        let next = track.s[first] + 5;
-        for (const i of flatTop) {
-            if (track.s[i] < next) continue;
-            next = track.s[i] + 13;
+
+        // ---- the ramps: stacks of old books of exactly the right height at both edges, a candle on every second one
+        let lastS = -100;
+        let count = 0;
+        for (let i = 0; i < n; i++) {
+            if (path.rail[i]) continue;
+            const h = path.y[i];
+            if (h <= 0.3 || h >= 7) continue;
+            if (Math.abs(path.s[i] - lastS) < 6.5) continue;
+            lastS = path.s[i];
+            count++;
+            let top = Infinity;
+            for (let k = -3; k <= 3; k++) top = Math.min(top, path.heightAt(path.wrap(i + k)));
+            top -= 0.06;
+            if (top < 0.4) continue;
             for (const side of [1, -1]) {
-                const p = track.pointAt(i, side * (track.w[i] / 2 + 4.6));
-                const c = candle(rng);
-                c.position.set(p.x, p.y - 0.06, p.z);
-                root.add(c);
-                glow.flames.push(new THREE.Vector3(p.x, p.y - 0.06 + c.userData.flameY, p.z));
-            }
-        }
-    }
-    // the ramps: stacks of old books of exactly the right height at both edges, a candle on every second one
-    let lastS = -100;
-    let count = 0;
-    for (let i = 0; i < n; i++) {
-        const h = track.y[i];
-        if (h <= 0.3 || h > 4.3) continue;
-        if (Math.abs(track.s[i] - lastS) < 6.5) continue;
-        lastS = track.s[i];
-        count++;
-        let top = Infinity;
-        for (let k = -3; k <= 3; k++) top = Math.min(top, track.heightAt((i + k + n) % n));
-        top -= 0.06;
-        if (top < 0.4) continue;
-        for (const side of [1, -1]) {
-            const p = track.pointAt(i, side * (track.w[i] / 2 + 4.6));
-            const g = group();
-            g.position.set(p.x, 0, p.z);
-            g.rotation.y = p.yaw;
-            let y = 0;
-            while (y < top - 0.01) {
-                let t = 1.2 + rng() * 1.2;
-                if (top - y - t < 0.7) t = top - y;
-                const bk = book(9 + rng() * 3, t, 7 + rng() * 2, rng.pick(BOOK_COLORS));
-                bk.position.set((rng() - 0.5) * 1.2, y, (rng() - 0.5) * 1.2);
-                bk.rotation.y = Math.PI / 2 + (rng() - 0.5) * 0.25;
-                g.add(bk);
-                y += t;
-            }
-            root.add(g);
-            if (count % 2 === 0) {
-                const c = candle(rng);
-                c.position.set(p.x, top, p.z);
-                root.add(c);
-                glow.flames.push(new THREE.Vector3(p.x, top + c.userData.flameY, p.z));
+                const p = path.pointAt(i, side * (path.w[i] / 2 + 4.6));
+                if (below(p.x, p.z, top, 3)) continue;
+                const g = group();
+                g.position.set(p.x, 0, p.z);
+                g.rotation.y = p.yaw;
+                let y = 0;
+                while (y < top - 0.01) {
+                    let t = 1.2 + rng() * 1.2;
+                    if (top - y - t < 0.7) t = top - y;
+                    const bk = book(9 + rng() * 3, t, 7 + rng() * 2, rng.pick(BOOK_COLORS));
+                    bk.position.set((rng() - 0.5) * 1.2, y, (rng() - 0.5) * 1.2);
+                    bk.rotation.y = Math.PI / 2 + (rng() - 0.5) * 0.25;
+                    g.add(bk);
+                    y += t;
+                }
+                root.add(g);
+                if (count % 2 === 0) candleAt(p.x, top, p.z);
             }
         }
     }

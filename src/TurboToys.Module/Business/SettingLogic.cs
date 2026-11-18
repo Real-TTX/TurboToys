@@ -87,7 +87,8 @@ public static class SeedLogic
             db.Weapons.Add(weapon);
         }
 
-        var tracks = await db.Tracks.ToListAsync();
+        // the official layouts only: the players' tracks (track editor) also carry a world key in Layout
+        var tracks = await db.Tracks.Where(t => t.Design == null).ToListAsync();
         foreach (var track in SeedContent.AllTracks().Where(t => !tracks.Any(x => x.Layout == t.Layout && x.TimeOfDay == t.TimeOfDay)))
         {
             db.Tracks.Add(track);
@@ -95,7 +96,7 @@ public static class SeedLogic
 
         await db.SaveChangesAsync();
 
-        tracks = await db.Tracks.Where(t => t.UpdateState != UpdateState.Deleted).OrderBy(t => t.Id).ToListAsync();
+        tracks = await db.Tracks.Where(t => t.UpdateState != UpdateState.Deleted && t.Design == null).OrderBy(t => t.Id).ToListAsync();
         var cups = await db.Cups.Select(c => c.Name).ToListAsync();
         foreach (var (cup, list) in SeedContent.AllCups().Where(c => !cups.Contains(c.Cup.Name)))
         {

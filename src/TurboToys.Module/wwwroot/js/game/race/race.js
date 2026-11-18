@@ -7,6 +7,7 @@ import { buildWorld } from '../world.js';
 import { stage } from '../render/stage.js';
 import { toon, canvasTexture, LAYER_FX, roundBoxGeometry } from '../render/toon.js';
 import { CarBody, FLAG } from './physics.js';
+import { loopPoint } from '../tracks/track.js';
 import { BotDriver } from './bot.js';
 import { Effects } from './fx.js';
 import { Weapons } from './weapons.js';
@@ -69,7 +70,7 @@ export class Race {
 
     async build() {
         const start = this.start;
-        const world = await buildWorld({ layout: start.track.layout, timeOfDay: start.track.timeOfDay.toLowerCase(), quality: this.quality });
+        const world = await buildWorld({ layout: start.track.design ?? start.track.layout, timeOfDay: start.track.timeOfDay.toLowerCase(), quality: this.quality });
         this.world = world;
         this.track = world.track;
         this.scene = world.scene;
@@ -293,8 +294,7 @@ export class Race {
         car.hp = hp;
         car.vehicle.repair();
         if (car.body) {
-            const i = (car.body.index - 6 + this.track.count) % this.track.count;
-            const p = this.track.pointAt(i);
+            const p = this.backOnRoad(car.body, 6);
             const keep = car.body.distance;
             car.body.place(p.x, p.y, p.z, p.yaw);
             car.body.distance = keep - 6;
@@ -465,6 +465,11 @@ export class Race {
             if (c.reset && !car.wrecked && this.raceTime > 0) this.resetCar(car);
             const events = car.body.update(dt, c);
             for (const e of events) this.carEvent(car, e);
+            // spray in the water
+            if (car.body.surface === 'water' && car.body.speed > 6 && Math.random() < dt * 24) {
+                const b = car.body;
+                this.effects.smoke(b.x - Math.sin(b.yaw) * 2, b.y + 0.4, b.z - Math.cos(b.yaw) * 2, { color: 'water', size: 1.6, vy: 4, life: 0.5, alpha: 0.8 });
+            }
             car.controls = c;
             this.useWeapons(car, c, dt);
         }
@@ -568,11 +573,30 @@ export class Race {
             }
             if (e.strength > 20 && this.raceTime > 0) this.send('Hit', car.seat, car.seat, 'Crash', Math.min(15, (e.strength - 20) * 0.6));
             car.vehicle.bump(e.strength * 0.3);
+        } else if (e.type === 'loop') {
+            if (car === this.myCar) {
+                audio.play('whoosh', { volume: 0.9 });
+                comic.pop(word('loop'), { at: new THREE.Vector3(b.x, b.y + 3, b.z), camera: this.camera, style: 'turbo', size: 0.9, life: 900 });
+            } else {
+                audio.play('whoosh', { x: b.x, z: b.z, volume: 0.5 });
+            }
+        } else if (e.type === 'fall') {
+            if (car === this.myCar) comic.pop(word('fall'), { at: new THREE.Vector3(b.x, b.y + 2, b.z), camera: this.camera, style: 'hit', size: 0.8, life: 900 });
+        } else if (e.type === 'surface') {
+            if (e.surface === 'water') {
+                this.effects.ring(b.x, b.y + 0.2, b.z, 5, 0x9fdcff, 0.5);
+                if (car === this.myCar) {
+                    audio.play('splash', { volume: 0.9 });
+                    comic.pop(word('splash'), { at: new THREE.Vector3(b.x, b.y + 2.5, b.z), camera: this.camera, style: 'turbo', size: 0.8, life: 800 });
+                } else {
+                    audio.play('splash', { x: b.x, z: b.z, volume: 0.5 });
+                }
+            }
         } else if (e.type === 'land') {
             car.vehicle.bump(e.strength);
             this.effects.smoke(b.x, b.y + 0.3, b.z, { color: 'dust', size: 3, vy: 2, life: 0.8 });
             if (car === this.myCar) {
-                audio.play('land', { volume: Math.min(1, e.strength / 25) });
+                audio.play(e.air > 0.8 || e.strength > 25 ? 'thud' : 'land', { volume: Math.min(1, e.strength / 25) });
                 if (e.air > 0.55) comic.pop(word('land'), { at: new THREE.Vector3(b.x, b.y + 2, b.z), camera: this.camera, style: 'plain', size: 0.8, life: 700 });
                 this.shake = Math.min(1, this.shake + e.strength / 60);
             }
@@ -693,9 +717,21 @@ export class Race {
         }
     }
 
+    /** A place on the road a few samples behind the car (on its own path; never in a looping). */
+    backOnRoad(b, back) {
+        let path = b.path ?? this.track;
+        let i = (b.pathIndex >= 0 ? b.pathIndex : b.index) - back;
+        if (path === this.track) {
+            const loop = this.track.loopAt(path.wrap(i)) ?? (b.rail ? b.rail.loop : null);
+            if (loop) i = loop.entry - back;
+        }
+        return path.pointAt(path.wrap(i));
+    }
+
     resetCar(car) {
         const b = car.body;
-        const p = this.track.pointAt(b.index);
+        if (b.rail) return;
+        const p = this.backOnRoad(b, 0);
         const keep = b.distance;
         b.place(p.x, p.y + 0.5, p.z, p.yaw);
         b.distance = keep;
@@ -733,21 +769,48 @@ export class Race {
             height = 3.3 + speed * 0.012;
             ahead = 7;
         }
-        const target = new THREE.Vector3(s.x - fx * dist, s.y + height, s.z - fz * dist);
-        // keep the camera above the road at its own place
-        const p = this.track.locate(target.x, target.z, car.body?.index ?? -1);
-        const limit = p.half + 1.4;
-        if (Math.abs(p.lateral) > limit) {
-            const n = this.track.normalAt(p.index);
-            const over = Math.abs(p.lateral) - limit;
-            target.x -= n.nx * Math.sign(p.lateral) * over;
-            target.z -= n.nz * Math.sign(p.lateral) * over;
+        // the car's frame: in a looping forward and up turn with the pitch
+        const pitch = s.pitch ?? 0;
+        const looping = Math.abs(pitch) > 0.35 || !!car.body?.rail;
+        const cp = looping ? Math.cos(pitch) : 1;
+        const sp = looping ? -Math.sin(pitch) : 0;
+        const f3 = new THREE.Vector3(fx * cp, sp * back, fz * cp);
+        const u3 = new THREE.Vector3(-Math.sin(s.yaw) * sp * back, cp, -Math.cos(s.yaw) * sp * back);
+        const target = new THREE.Vector3(s.x, s.y, s.z).addScaledVector(f3, -dist).addScaledVector(u3, height);
+        const rail = car.body?.rail;
+        if (rail && back > 0) {
+            // in a looping the camera rides on the circle behind the car (a straight line behind it would leave the band)
+            const q = loopPoint(rail.loop, Math.max(0, rail.theta - dist / rail.loop.radius), rail.lateral);
+            target.set(q.x + q.ux * height, q.y + q.uy * height, q.z + q.uz * height);
         }
-        target.y = Math.max(target.y, p.height + 1.4);
-        const k = this.cameraMode === 2 ? 1 : 1 - Math.exp(-dt * 7);
+        const tunnel = car.body ? this.track.tunnelAt(car.body.path, car.body.pathIndex) : null;
+        if (!looping) {
+            // keep the camera above the road at its own place (and below the roof in a tunnel)
+            const p = car.body
+                ? this.track.locateCar(target.x, target.z, s.y, false, car.body.path, car.body.pathIndex, this.cameraLocation ??= {})
+                : this.track.locateAny(target.x, target.z, s.y, this.cameraLocation ??= {});
+            const limit = p.half + 1.4;
+            if (Math.abs(p.lateral) > limit) {
+                const n = p.path.normalAt(p.index);
+                const over = Math.abs(p.lateral) - limit;
+                target.x -= n.nx * Math.sign(p.lateral) * over;
+                target.z -= n.nz * Math.sign(p.lateral) * over;
+            }
+            target.y = Math.max(target.y, p.height + 1.4);
+            if (tunnel) target.y = Math.min(target.y, p.height + 7.5);
+        }
+        const k = this.cameraMode === 2 ? 1 : 1 - Math.exp(-dt * (looping ? 16 : 7));
         this.camera.position.lerp(target, k);
-        const look = new THREE.Vector3(s.x + fx * ahead, s.y + 1.1, s.z + fz * ahead);
-        this.cameraLook.lerp(look, 1 - Math.exp(-dt * 10));
+        const look = new THREE.Vector3(s.x, s.y, s.z).addScaledVector(f3, ahead).addScaledVector(u3, 1.1);
+        this.cameraLook.lerp(look, 1 - Math.exp(-dt * (looping ? 20 : 10)));
+        this.camera.up.lerp(looping ? u3 : new THREE.Vector3(0, 1, 0), 1 - Math.exp(-dt * (looping ? 14 : 5))).normalize();
+        if (this.myCar === car) {
+            const space = tunnel ? 'tunnel' : this.world.theme?.key ?? 'room';
+            if (space !== this.space) {
+                this.space = space;
+                audio.setSpace?.(space);
+            }
+        }
         if (this.shake > 0) {
             this.shake = Math.max(0, this.shake - dt * 2.2);
             const a = this.shake * 0.5;
@@ -795,8 +858,10 @@ export class Race {
             }
             const s = c.vehicle.state;
             const top = c.info.car.spec.topSpeed;
-            voice.update({ rpm: Math.min(1, Math.abs(s.speed) / top), throttle: 0.7, speed: Math.min(1, Math.abs(s.speed) / top), turbo: !!(s.flags & FLAG.boost), boostSpool: 0.5,
-                skid: s.flags & FLAG.drift ? 0.6 : 0, airborne: !!(s.flags & FLAG.air), distance: d });
+            const local = c.body;
+            voice.update({ rpm: Math.min(1.2, Math.abs(s.speed) / top), throttle: local ? Math.max(0, c.controls?.throttle ?? 0) : 0.7, speed: Math.min(1, Math.abs(s.speed) / top),
+                turbo: !!(s.flags & FLAG.boost), boostSpool: local ? local.spool : 0.5, skid: s.flags & FLAG.drift ? 0.6 : 0, airborne: !!(s.flags & FLAG.air), distance: d,
+                x: s.x, z: s.z, vx: s.vx, vz: s.vz });
         }
     }
 

@@ -173,7 +173,8 @@ export class Weapons {
             }
             b.x = nx;
             b.z = nz;
-            const p = this.track.locate(b.x, b.z, b.index ?? -1);
+            const p = this.track.locateCar(b.x, b.z, b.y - 1, true, b.path, b.index ?? -1, b.loc ??= {});
+            b.path = p.path;
             b.index = p.index;
             const wall = Math.abs(p.lateral) > p.half + 2.1;
             if (hit || wall || b.life <= 0) {
@@ -228,7 +229,8 @@ export class Weapons {
             r.mesh.rotation.set(0, r.yaw, Math.sin(time * 20) * 0.2);
             this.effects.smoke(r.x - Math.sin(r.yaw) * 1.4, r.y, r.z - Math.cos(r.yaw) * 1.4, { size: 1.2, vy: 0.5, life: 0.8, alpha: 0.7 });
             this.effects.glow(r.x - Math.sin(r.yaw) * 1.2, r.y, r.z - Math.cos(r.yaw) * 1.2, 2.5, 'fire', 0.05);
-            const p = this.track.locate(r.x, r.z, r.index);
+            const p = this.track.locateCar(r.x, r.z, r.y - 1, true, r.path, r.index ?? -1, r.loc ??= {});
+            r.path = p.path;
             r.index = p.index;
             const hit = cars.find(c => c.seat !== r.seat && c.alive && Math.hypot(c.x - r.x, c.z - r.z) < CAR_RADIUS + 0.5 && Math.abs(c.y + 1 - r.y) < 3);
             if (hit || Math.abs(p.lateral) > p.half + 2.2 || r.life <= 0) {

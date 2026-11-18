@@ -1,6 +1,10 @@
-// TurboToys · themes/garden.js – "Gartenparty": a sunny back garden seen by a toy car. A gravel path through the lawn, flower beds with tulips
-// and sunflowers, a pond under a wooden bridge (the raised part of the track) with a fishing garden gnome, a tree with a swing, a picnic party
-// with cake and balloons, a sprinkler on a snaking hose, a vegetable patch, a shed, the house terrace, a picket fence and hedge, cartoon clouds.
+// TurboToys · themes/garden.js – "Gartenparty": a sunny back garden seen by a toy car. A gravel path through the lawn (a figure eight on the
+// official layout): up a plank ramp onto the party table (cake and cups beside the road), over a plank bridge across the lap, a drain pipe, a
+// looping, a shortcut through the paddling pool (a 'pool' branch). Around it: flower beds with tulips and sunflowers, a pond with a fishing
+// garden gnome, a tree with a swing, a picnic blanket with balloons, a sprinkler on a snaking hose, a vegetable patch, a shed, the house
+// terrace, a picket fence and hedge, cartoon clouds.
+// The theme also dresses players' custom tracks: every set piece looks for a free spot off the roads (or is left out); the party table only
+// stands under a flat stretch at table height, the pool only around a 'pool' branch.
 
 import * as THREE from 'three';
 import { floor, scatter } from './common.js';
@@ -127,6 +131,7 @@ export default {
                 const px = x + Math.cos(k * 2.39996) * d;
                 const pz = z + Math.sin(k * 2.39996) * d;
                 if (track.isNearRoad(px, pz, 4.5 + reach)) continue;
+                if (!opts.exact && reserved.some(p => Math.hypot(p.x - px, p.z - pz) < p.r + r)) continue;
                 object.position.set(px, y, pz);
                 object.rotation.y = yaw;
                 root.add(object);
@@ -135,7 +140,239 @@ export default {
             }
             return false;
         };
+        /**
+         * A free spot for a set piece of radius r near (x, z): off every road (4.5 + r), inside the yard, not on another piece; searched in a
+         * spiral around the wish (the official layout's wishes are free, custom tracks move them). Returns { x, z } or null.
+         */
+        const spot = (x, z, r, tries = 160) => {
+            for (let k = 0; k < tries; k++) {
+                const d = k === 0 ? 0 : 3 + k * 1.6;
+                const px = x + Math.cos(k * 2.39996) * d;
+                const pz = z + Math.sin(k * 2.39996) * d;
+                if (!isFree(px, pz, r) || track.isNearRoad(px, pz, 4.5 + r)) continue;
+                return { x: px, z: pz };
+            }
+            return null;
+        };
+        const official = track.key === 'garden';
         const animations = [];
+        const pools = [];
+
+        /**
+         * The party table under the longest flat stretch of the lap at table height (y 6 … 9.5, at least 40 long, nearly straight) when its
+         * top covers no other road: a checkered cloth, wooden legs, the cake on one side, cups and plates on the other. Returns the set of
+         * the stretch's samples (the bridge decoration leaves them out) or null.
+         */
+        function partyTable() {
+            const n = track.count;
+            const ok = i => !track.rail[i] && track.y[i] > 6 && track.y[i] < 9.5 && Math.abs(track.slopeAt(i)) < 0.03;
+            let first = -1;
+            for (let k = 0; k < n; k++) if (!ok(k)) { first = k; break; }
+            if (first < 0) return null;
+            let best = null;
+            let run = null;
+            for (let k = 1; k <= n; k++) {
+                const j = (first + k) % n;
+                if (ok(j)) {
+                    run ??= { a: j, len: 0 };
+                    run.len++;
+                } else if (run) {
+                    if (!best || run.len > best.len) best = run;
+                    run = null;
+                }
+            }
+            if (!best || best.len < 40) return null;
+            const ia = best.a;
+            const ib = (best.a + best.len - 1) % n;
+            const chord = Math.hypot(track.x[ib] - track.x[ia], track.z[ib] - track.z[ia]);
+            if (chord < best.len * 0.85) return null;
+            const yaw = Math.atan2(track.x[ib] - track.x[ia], track.z[ib] - track.z[ia]);
+            const fx = Math.sin(yaw);
+            const fz = Math.cos(yaw);
+            // local frame: z along the chord, x across (x = (fz, -fx) in the world)
+            const mx = (track.x[ia] + track.x[ib]) / 2;
+            const mz = (track.z[ia] + track.z[ib]) / 2;
+            const samples = new Set();
+            let minL = Infinity;
+            let maxL = -Infinity;
+            let top = Infinity;
+            for (let k = 0; k < best.len; k++) {
+                const i = (ia + k) % n;
+                samples.add(i);
+                const lx = (track.x[i] - mx) * fz - (track.z[i] - mz) * fx;
+                minL = Math.min(minL, lx);
+                maxL = Math.max(maxL, lx);
+                top = Math.min(top, track.y[i]);
+            }
+            top -= 0.12;
+            const x0 = minL - 38;
+            const x1 = maxL + 38;
+            const L = chord - 2;
+            const W = x1 - x0;
+            const cxl = (x0 + x1) / 2;
+            const cx = mx + fz * cxl;
+            const cz = mz - fx * cxl;
+            // the top must not cover another road (the stretch itself and its ramps are fine)
+            const near = new Set();
+            for (let k = -14; k < best.len + 14; k++) near.add((ia + k + n) % n);
+            for (let u = -L / 2; u <= L / 2; u += 4) {
+                for (let v = x0; v <= x1; v += 4) {
+                    const x = mx + fx * u + fz * v;
+                    const z = mz + fz * u - fx * v;
+                    if (track.roadsNear(x, z, 2, (h, path, i) => !(path === track && near.has(i)) && h < top + 12)) return null;
+                }
+            }
+            const T = new THREE.Group();
+            // the top with its cloth (hanging over the edges) and four legs
+            T.add(at(box(W, 1.4, L, G.woodLight), 0, -0.9, 0));
+            const cloth = new THREE.Mesh(new THREE.BoxGeometry(W + 2, 0.3, L + 2), blanketMaterial());
+            cloth.position.y = -0.1;
+            cloth.receiveShadow = true;
+            T.add(cloth);
+            for (const s of [-1, 1]) {
+                const hangX = new THREE.Mesh(new THREE.BoxGeometry(0.3, 4.5, L + 2), blanketMaterial());
+                hangX.position.set(s * (W / 2 + 1), -2.3, 0);
+                T.add(hangX);
+                const hangZ = new THREE.Mesh(new THREE.BoxGeometry(W + 2, 4.5, 0.3), blanketMaterial());
+                hangZ.position.set(0, -2.3, s * (L / 2 + 1));
+                T.add(hangZ);
+            }
+            const legH = top - GROUND - 1.6;
+            for (const sx of [-1, 1]) for (const sz of [-1, 1]) T.add(at(cyl(1.6, 1.3, legH, G.woodDark, 10), sx * (W / 2 - 4), -1.6 - legH / 2, sz * (L / 2 - 4)));
+            // the party on it: the cake on the far side of the bulge, cups, plates, hats and presents on the other
+            const side = Math.abs(minL) > Math.abs(maxL) ? 1 : -1;
+            const lane = s => (s > 0 ? maxL - cxl : minL - cxl) + s * 15;
+            T.add(at(scaled(cake(), 0.75, 0.75, 0.75), lane(side) + side * 11, 0.05, 0));
+            T.add(at(plate('cake'), lane(side) + side * 8, 0.05, -L / 2 + 10));
+            T.add(at(partyHat(G.pink), lane(side) + side * 6, 0.05, L / 2 - 9));
+            const other = -side;
+            const cups = [G.red, G.blue, G.yellow, G.teal];
+            cups.forEach((c, k) => T.add(at(cup(c), lane(other) + other * (4 + (k % 2) * 7), 0.05, -L / 2 + 8 + k * ((L - 16) / 3))));
+            T.add(at(plate('sandwich'), lane(other) + other * 13, 0.05, -L * 0.18));
+            T.add(at(plate('cake'), lane(other) + other * 13, 0.05, L * 0.2));
+            T.add(at(gift(8, G.purple, G.yellow), lane(other) + other * 20, 0.05, 0, 0.4));
+            // a juice bottle
+            const bottle = group(at(cyl(4.2, 4.2, 16, G.orange, 12), 0, 8, 0), at(cyl(4.3, 4.3, 5, G.white, 12), 0, 8.6, 0),
+                at(cyl(1.6, 3.6, 5, G.orange, 12), 0, 18.6, 0), at(cyl(1.8, 1.8, 2, G.red, 10), 0, 22, 0));
+            T.add(at(bottle, lane(side) + side * 10, 0.05, L / 2 - 22));
+            T.position.set(cx, top, cz);
+            T.rotation.y = yaw;
+            T.traverse(o => {
+                if (o.isMesh) o.castShadow = o.receiveShadow = true;
+            });
+            root.add(T);
+            reserve(cx, cz, Math.hypot(W, L) / 2);
+            return samples;
+        }
+
+        /** The inflatable paddling pool around a 'pool' shortcut: a water floor, a ring of two air tubes (open where the road runs through), a duck. */
+        function paddlingPool(branch) {
+            const mid = Math.floor(branch.count / 2);
+            const px = branch.x[mid];
+            const pz = branch.z[mid];
+            const onBranch = (x, z, m) => track.roadsNear(x, z, m, (h, path) => path === branch) !== null;
+            const foreign = (x, z, m) => track.roadsNear(x, z, m, (h, path) => path !== branch) !== null;
+            // the biggest ring (30 … 18) that keeps off the other roads
+            let R = 0;
+            for (let r = 30; r >= 18; r -= 2) {
+                let free = true;
+                for (let a = 0; a < Math.PI * 2 && free; a += 0.1) if (foreign(px + Math.cos(a) * r, pz + Math.sin(a) * r, 6)) free = false;
+                if (free) {
+                    R = r;
+                    break;
+                }
+            }
+            if (!R) return;
+            pools.push({ x: px, z: pz, r: R + 5 });
+            reserve(px, pz, R + 5);
+            const floorDisc = new THREE.Mesh(new THREE.CircleGeometry(R, 40), toon(G.water, { steps: 2 }));
+            floorDisc.rotation.x = -Math.PI / 2;
+            floorDisc.position.set(px, 0.08, pz);
+            floorDisc.receiveShadow = true;
+            root.add(floorDisc);
+            // the ring: arcs between the openings where the branch passes
+            const steps = 72;
+            const open = [];
+            for (let k = 0; k < steps; k++) {
+                const a = (k / steps) * Math.PI * 2;
+                open.push(onBranch(px + Math.cos(a) * R, pz + Math.sin(a) * R, 3.5));
+            }
+            const startK = open.findIndex(o => o);
+            const arcs = [];
+            if (startK < 0) {
+                arcs.push([0, steps]);
+            } else {
+                let from = -1;
+                for (let k = 1; k <= steps; k++) {
+                    const j = (startK + k) % steps;
+                    if (!open[j] && from < 0) from = startK + k;
+                    if (open[j] && from >= 0) {
+                        arcs.push([from, startK + k]);
+                        from = -1;
+                    }
+                }
+            }
+            const tubes = [[2.6, 2.6, G.blue], [2.4, 7.4, G.sky]];
+            for (const [a0, a1] of arcs) {
+                const t0 = (a0 / steps) * Math.PI * 2;
+                const arc = ((a1 - a0) / steps) * Math.PI * 2;
+                for (const [tr, ty, color] of tubes) {
+                    const tube = new THREE.Mesh(new THREE.TorusGeometry(R, tr, 10, Math.max(6, Math.round(arc * 12)), arc), toon(color, { steps: 4 }));
+                    // TorusGeometry lies in xy, from +x towards +y: turned to the start angle, then laid flat (+y → +z)
+                    tube.geometry.rotateZ(t0);
+                    tube.rotation.x = Math.PI / 2;
+                    tube.position.set(px, ty, pz);
+                    tube.castShadow = true;
+                    root.add(tube);
+                    // round caps at the openings
+                    for (const t of [t0, t0 + arc]) root.add(at(sphere(tr, color, 10, 8), px + Math.cos(t) * R, ty, pz + Math.sin(t) * R));
+                }
+                // white stripes on the upper tube
+                for (let t = t0 + 0.25; t < t0 + arc - 0.15; t += 0.5) {
+                    const band = torus(2.5, 0.5, G.white, 6, 12);
+                    band.position.set(px + Math.cos(t) * R, 7.4, pz + Math.sin(t) * R);
+                    band.rotation.y = -t;
+                    root.add(band);
+                }
+            }
+            // a rubber duck and a beach ball float beside the road (animated: they bob)
+            const floaters = [];
+            for (const [k, make] of [[0.25, rubberDuck], [0.75, beachBall]]) {
+                for (let tryA = 0; tryA < 12; tryA++) {
+                    const a = (k + tryA * 0.083) * Math.PI * 2;
+                    const x = px + Math.cos(a) * R * 0.62;
+                    const z = pz + Math.sin(a) * R * 0.62;
+                    if (onBranch(x, z, 4)) continue;
+                    const f = make();
+                    f.userData.keep = true;
+                    f.position.set(x, GROUND + 0.2, z);
+                    f.rotation.y = a * 3;
+                    world.add(f);
+                    floaters.push(f);
+                    break;
+                }
+            }
+            animations.push((dt, time) => floaters.forEach((f, k) => {
+                f.position.y = GROUND + 0.2 + Math.sin(time * 1.8 + k * 2) * 0.35;
+                f.rotation.z = Math.sin(time * 1.3 + k) * 0.08;
+            }));
+        }
+        function rubberDuck() {
+            const d = new THREE.Group();
+            d.add(at(scaled(sphere(4, G.yellow, 14, 10), 1.25, 0.8, 1), 0, 2.4, 0));
+            d.add(at(sphere(2.6, G.yellow, 12, 9), 3.2, 6, 0));
+            d.add(at(scaled(cone(1.1, 2.4, G.orange, 8), 1, 1, 0.6).rotateZ(-Math.PI / 2), 6.2, 5.7, 0));
+            for (const s of [-1, 1]) d.add(at(sphere(0.5, G.black, 6, 5), 4.6, 6.8, s * 1.4));
+            d.add(at(scaled(cone(1.6, 2.6, G.yellow, 6), 1, 1, 0.6).rotateZ(0.9), -4.6, 3.8, 0));
+            return d;
+        }
+        function beachBall() {
+            const b = new THREE.Group();
+            const colors = [G.red, G.white, G.blue, G.white, G.yellow, G.white];
+            colors.forEach((c, k) => b.add(new THREE.Mesh(new THREE.SphereGeometry(4.2, 6, 10, (k / 6) * Math.PI * 2, Math.PI / 3), toon(c, { steps: 4 }))));
+            b.children.forEach(m => { m.position.y = 3.4; m.castShadow = true; });
+            return b;
+        }
 
         // ---------------------------------------------------------- lawn, terrace, the house, fence + hedge, far trees, clouds
         const lawn = floor({ track, size: 1500, draw: drawLawn, tile: 110 });
@@ -274,9 +511,10 @@ export default {
             world.add(c);
         }
 
-        // ---------------------------------------------------------- the pond under the bridge, the bridge's planks and posts
-        const pond = { x: -80, z: -160, rx: 50, rz: 32 };
-        {
+        // ---------------------------------------------------------- the pond (inside the west loop of the eight), the bridge's planks and posts
+        const pondAt = spot(official ? -112 : -100, official ? -86 : -150, 44);
+        const pond = pondAt && { x: pondAt.x, z: pondAt.z, rx: 36, rz: 26 };
+        if (pond) {
             const water = new THREE.Mesh(new THREE.CircleGeometry(1, 40), toon(G.water, { steps: 2 }));
             water.rotation.x = -Math.PI / 2;
             water.scale.set(pond.rx, pond.rz, 1);
@@ -355,14 +593,18 @@ export default {
                 root.add(r);
             }
         }
-        // the bridge: plank decking under the barrier stones and posts down to the ground
+        // ---------------------------------------------------------- the party table: under a flat stretch of the lap at table height
+        const table = partyTable();
+        // the bridge: plank decking under the barrier stones and posts down to the ground (not on the table, not on a road below)
         {
             const n = track.count;
+            const onTable = i => table && table.has(i);
+            const roadBelow = (x, z, y, margin) => track.roadsNear(x, z, margin, h => h < y - 3) !== null;
             for (const side of [1, -1]) {
                 // rail posts with a sagging rope beyond the barrier stones (what the chase camera sees of the bridge)
                 const rail = [];
                 for (let i = 0; i < n; i += 14) {
-                    if (track.y[i] < 1.4) continue;
+                    if (track.rail[i] || track.y[i] < 1.4 || onTable(i)) continue;
                     const { nx, nz } = track.normalAt(i);
                     const l = side * (track.w[i] / 2 + 5.6);
                     const x = track.x[i] + nx * l;
@@ -385,8 +627,8 @@ export default {
                 }
                 for (let i = 0; i < n; i += 2) {
                     const y0 = track.y[i];
-                    if (y0 < 1.0) continue;
                     const j = (i + 2) % n;
+                    if (y0 < 1.0 || track.rail[i] || track.rail[j] || onTable(i)) continue;
                     const lat = track.w[i] / 2 + 2.6;
                     const a = track.normalAt(i);
                     const bN = track.normalAt(j);
@@ -397,22 +639,62 @@ export default {
                     plank.lookAt(p1.x, p1.y, p1.z);
                     // lookAt in the parent's space: the plank group is root (only translated): fine
                     root.add(plank);
-                    if (i % 12 === 0) {
-                        // a post under the deck, down to the ground (or the pond)
+                    if (i % 12 === 0 && !roadBelow(p0.x, p0.z, y0, 2)) {
+                        // a post under the deck, down to the ground (or the pond) – never on a road passing below
                         const h = y0 - GROUND - 0.85;
                         root.add(at(cyl(1.1, 1.3, h, G.woodDark, 8), p0.x, h / 2, p0.z));
                     }
                 }
             }
+            // sawhorse trestles carry the bridge beside a road that passes below (where the skirt opens)
+            const done = [];
+            for (let i = 0; i < n; i += 2) {
+                const y0 = track.y[i];
+                if (track.rail[i] || y0 < 8) continue;
+                const x = track.x[i];
+                const z = track.z[i];
+                // only right beside the opening: a road below within reach, but not under the trestle or its legs
+                if (!roadBelow(x, z, y0, 10) || roadBelow(x, z, y0, 4)) continue;
+                if (done.some(p => Math.hypot(p.x - x, p.z - z) < 16)) continue;
+                const { nx, nz } = track.normalAt(i);
+                const span = track.w[i] / 2 + 2.2;
+                if ([-1, 1].some(s => roadBelow(x + nx * span * s, z + nz * span * s, y0, 3))) continue;
+                done.push({ x, z });
+                const h = y0 - GROUND - 0.7;
+                const trestle = new THREE.Group();
+                trestle.add(at(box(span * 2 + 4, 1.6, 2.4, G.wood), 0, h - 0.8, 0));
+                for (const s of [-1, 1]) {
+                    for (const f of [-1, 1]) {
+                        const leg = box(1.5, h * 1.03, 1.5, G.woodDark);
+                        leg.position.set(s * (span + 0.6), h / 2, f * 1.8);
+                        leg.rotation.x = f * 0.16;
+                        trestle.add(leg);
+                    }
+                    trestle.add(at(box(1.2, 1, 4.4, G.woodLight), s * (span + 0.6), h * 0.32, 0));
+                }
+                trestle.add(at(box(span * 2, 1.1, 0.9, G.woodLight), 0, h * 0.32, 0));
+                trestle.position.set(x, 0, z);
+                // the beam (local x) runs across the deck
+                trestle.rotation.y = Math.atan2(track.tx[i], track.tz[i]);
+                root.add(trestle);
+            }
         }
-        // the gnome fishing at the north shore
-        {
+        // the gnome fishing at the pond's shore (on the side towards the free lawn)
+        const gnomeAt = pond && [0, 1, 2, 3].map(k => {
+            const a = 0.2 + k * (Math.PI / 2);
+            return { x: pond.x + Math.cos(a) * (pond.rx + 20), z: pond.z + Math.sin(a) * (pond.rz + 20), a };
+        }).find(p => isFree(p.x, p.z, 0) && !track.isNearRoad(p.x, p.z, 16.5));
+        if (gnomeAt) {
             const gn = gnome();
-            put(gn.group, pond.x - 6, pond.z + pond.rz + 22, 12, Math.PI + 0.15, 0, { exact: true, reach: 12 });
+            // faces the pond: the bobber floats 34 ahead of the gnome
+            const yaw = Math.atan2(pond.x - gnomeAt.x, pond.z - gnomeAt.z);
+            const gx = gnomeAt.x;
+            const gz = gnomeAt.z;
+            put(gn.group, gx, gz, 12, yaw, 0, { exact: true, reach: 12 });
             const bobber = group(at(sphere(1.4, G.red, 10, 8), 0, 0, 0), at(sphere(1, G.white, 8, 6), 0, 1.1, 0));
             bobber.userData.keep = true;
-            const bx = pond.x - 6 - Math.sin(0.15) * 34;
-            const bz = pond.z + pond.rz + 22 - Math.cos(0.15) * 34;
+            const bx = gx + Math.sin(yaw) * 34;
+            const bz = gz + Math.cos(yaw) * 34;
             bobber.position.set(bx, 0.9 + GROUND, bz);
             world.add(bobber);
             animations.push((dt, time) => {
@@ -420,8 +702,7 @@ export default {
             });
             // the fishing line from the rod tip down to the bobber
             const tipLocal = gn.rodTip;
-            const yaw = Math.PI + 0.15;
-            const tip = new THREE.Vector3(tipLocal.x * Math.cos(yaw) + tipLocal.z * Math.sin(yaw), tipLocal.y, -tipLocal.x * Math.sin(yaw) + tipLocal.z * Math.cos(yaw)).add(new THREE.Vector3(pond.x - 6, 0, pond.z + pond.rz + 22));
+            const tip = new THREE.Vector3(tipLocal.x * Math.cos(yaw) + tipLocal.z * Math.sin(yaw), tipLocal.y, -tipLocal.x * Math.sin(yaw) + tipLocal.z * Math.cos(yaw)).add(new THREE.Vector3(gx, 0, gz));
             const end = new THREE.Vector3(bx, 1.2, bz);
             const line = cyl(0.12, 0.12, tip.distanceTo(end), G.white, 3);
             line.position.copy(tip).add(end).multiplyScalar(0.5);
@@ -429,12 +710,21 @@ export default {
             root.add(line);
         }
 
+        // ---------------------------------------------------------- the paddling pool around the 'pool' shortcut
+        for (const branch of track.branches) if (branch.data.style === 'pool') paddlingPool(branch);
+
+        // ---------------------------------------------------------- the picnic party (north of the eight's crossing)
+        const partyAt = spot(official ? 12 : -48, official ? -222 : -58, 46);
+        const party = partyAt ?? { x: NaN, z: NaN };
+        if (partyAt) reserve(party.x, party.z, 50);
+
         // ---------------------------------------------------------- the tree with the swing and the bunting
-        const treeX = 150;
-        const treeZ = -118;
-        {
+        const treeAt = spot(official ? -112 : 150, official ? -246 : -118, 16);
+        const treeX = treeAt?.x ?? NaN;
+        const treeZ = treeAt?.z ?? NaN;
+        if (treeAt) {
             const t = tree(150, 52, '#3f9b4b');
-            if (put(t, treeX, treeZ, 14, 0, 0, { exact: true, reach: 16 })) {
+            if (put(t, treeX, treeZ, 14, 0, 0, { exact: true, reach: 16 }) && !track.isNearRoad(treeX - 48, treeZ + 5, 16)) {
                 // a branch for the swing
                 const branchFrom = new THREE.Vector3(treeX - 4, 112, treeZ);
                 const branchTo = new THREE.Vector3(treeX - 62, 122, treeZ + 6);
@@ -495,8 +785,7 @@ export default {
         }
 
         // ---------------------------------------------------------- the picnic party
-        const party = { x: -48, z: -58 };
-        {
+        if (partyAt) {
             const blanket = new THREE.Mesh(new THREE.BoxGeometry(92, 0.4, 70), blanketMaterial());
             blanket.position.set(party.x, 0.2, party.z);
             blanket.rotation.y = 0.25;
@@ -562,13 +851,25 @@ export default {
         }
 
         // ---------------------------------------------------------- the sprinkler on the hose (animated water)
-        const spr = { x: 62, z: -78 };
-        {
-            const reel = hoseReel();
-            put(reel, -150, -78, 14, 0.4, 0, { exact: true });
-            const path = [[-142, -78], [-128, -96], [-100, -108], [-70, -116], [-36, -106], [-6, -96], [20, -86], [40, -92], [spr.x - 4, spr.z - 2]];
-            const ok = path.every(([x, z]) => !track.isNearRoad(x, z, 4.5));
-            if (ok) root.add(hose(path));
+        const spr = spot(official ? 84 : 62, official ? -104 : -78, 10);
+        if (spr) {
+            // the hose reel a little away, the hose snakes over the lawn to the sprinkler (only when it stays off the roads)
+            const reelAt = spot(official ? 102 : spr.x - 80, official ? -146 : spr.z, 14);
+            if (reelAt) {
+                const reel = hoseReel();
+                put(reel, reelAt.x, reelAt.z, 14, 0.4, 0, { exact: true });
+                const path = [];
+                const L = Math.hypot(spr.x - reelAt.x, spr.z - reelAt.z);
+                const ux = (spr.x - reelAt.x) / L;
+                const uz = (spr.z - reelAt.z) / L;
+                const steps = Math.max(3, Math.round(L / 14));
+                for (let k = 0; k <= steps; k++) {
+                    const t = k / steps;
+                    const wave = Math.sin(t * Math.PI * 3) * 8 * Math.sin(t * Math.PI);
+                    path.push([reelAt.x + ux * (L - 6) * t + 8 * ux * (1 - t) - uz * wave, reelAt.z + uz * (L - 6) * t + 8 * uz * (1 - t) + ux * wave]);
+                }
+                if (path.every(([x, z]) => !track.isNearRoad(x, z, 4.5))) root.add(hose(path));
+            }
             const base = new THREE.Group();
             base.add(at(roundBox(16, 3, 10, 1.4, G.dark, 1), 0, 1.5, 0));
             base.add(at(cyl(1.4, 1.4, 12, G.yellow, 8), 0, 8, 0));
@@ -621,8 +922,13 @@ export default {
         }
 
         // ---------------------------------------------------------- stepping stones from the party to the tree
-        {
-            const pts = [[-4, -30], [14, -28], [32, -32], [50, -38], [72, -44], [92, -52], [106, -66], [116, -82]];
+        if (partyAt && treeAt) {
+            const pts = [];
+            const L = Math.hypot(treeX - party.x, treeZ - party.z);
+            for (let d = 52; d < L - 20; d += 16) {
+                const t = d / L;
+                pts.push([party.x + (treeX - party.x) * t + Math.sin(d * 0.07) * 5, party.z + (treeZ - party.z) * t + Math.cos(d * 0.05) * 4]);
+            }
             for (const [x, z] of pts) {
                 const st = steppingStone(rng.range(5, 6.5), rng.pick([G.stoneLight, G.stone]));
                 if (!track.isNearRoad(x, z, 10) && !reserved.some(r => Math.hypot(r.x - x, r.z - z) < r.r - 4)) {
@@ -639,7 +945,7 @@ export default {
         const stemItems = [];
         const tulipColors = [G.red, G.yellow, G.pink, G.purple, G.orange, G.red];
         const bed = (x, z, rx, rz, count, palette = tulipColors) => {
-            if (track.isNearRoad(x, z, 4.5 + Math.max(rx, rz))) return false;
+            if (track.isNearRoad(x, z, 4.5 + Math.max(rx, rz)) || reserved.some(p => Math.hypot(p.x - x, p.z - z) < p.r + Math.max(rx, rz))) return false;
             const soil = new THREE.Mesh(new THREE.CylinderGeometry(1, 1.06, 1, 24), toon(G.soil));
             soil.scale.set(rx, 1.2, rz);
             soil.position.set(x, 0.3, z);
@@ -776,8 +1082,9 @@ export default {
                 z = rng.range(yard.minZ, yard.maxZ - 75);
             }
             if (track.isNearRoad(x, z, 4.6)) continue;
-            if (Math.hypot((x - pond.x) / (pond.rx + 3), (z - pond.z) / (pond.rz + 3)) < 1) continue;
+            if (pond && Math.hypot((x - pond.x) / (pond.rx + 3), (z - pond.z) / (pond.rz + 3)) < 1) continue;
             if (Math.hypot(x - party.x, z - party.z) < 48) continue;
+            if (pools.some(p => Math.hypot(x - p.x, z - p.z) < p.r + 4)) continue;
             const s = rng.range(0.8, 1.6);
             tufts.push({ x, y: 0, z, ry: rng() * 6.3, s, sy: s * rng.range(0.8, 1.3), color: rng.pick(greens) });
             if (rng() < 0.16) {
@@ -816,7 +1123,8 @@ export default {
             bf.add(at(cyl(0.35, 0.35, 4, G.dark, 5), 0, 0, -0.5).rotateX(Math.PI / 2));
             bf.userData.keep = true;
             world.add(bf);
-            const home = [[party.x, party.z], [treeX - 40, treeZ + 20], [-128, -22], [26, -180]][k % 4];
+            const homes = [[party.x, party.z], [treeX - 40, treeZ + 20], pond ? [pond.x, pond.z] : [cx, cz], spr ? [spr.x, spr.z] : [cx, cz]].filter(h => Number.isFinite(h[0]));
+            const home = homes.length ? homes[k % homes.length] : [cx, cz];
             butterflies.push({ bf, wings, home, r: rng.range(14, 26), speed: rng.range(0.4, 0.7) * (k % 2 ? 1 : -1), h: rng.range(14, 26), phase: rng() * 6 });
         }
         animations.push((dt, time) => {
@@ -835,6 +1143,7 @@ export default {
         const lights = [];
         if (night) {
             for (const [x, z, c] of [[party.x, party.z, '#ffd27a'], [treeX - 40, treeZ + 10, '#ffe2a0'], [hx - 150, terraceZ0 + 36, '#ffcf7a']]) {
+                if (!Number.isFinite(x)) continue;
                 const l = new THREE.PointLight(c, 1400, 200, 1.6);
                 l.position.set(x, 40, z);
                 lights.push(l);

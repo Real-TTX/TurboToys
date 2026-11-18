@@ -486,6 +486,62 @@ export function ovenMitt(color = K.red) {
     return g;
 }
 
+// ------------------------------------------------------------------ the sink (the water shortcut)
+
+/**
+ * A swan-neck mixer tap: the column stands at the origin, the neck arcs over +x and the spout ends `reach` away, `height` above the base.
+ * Returns { group, spout: [x, y] } (the spout's mouth in the group's frame).
+ */
+export function tap(reach = 11, height = 22) {
+    const g = new THREE.Group();
+    const R = reach / 2;
+    g.add(at(cyl(3.2, 3.6, 2, K.steelDark, 16), 0, 1, 0));
+    g.add(at(cyl(1.7, 1.9, height, K.steel, 12), 0, height / 2 + 1, 0));
+    const neck = torus(R, 1.6, K.steel, 8, 18, Math.PI);
+    neck.position.set(R, height + 1, 0);
+    g.add(neck);
+    g.add(at(cyl(1.9, 1.5, 3, K.steel, 12), reach, height - 0.5, 0));
+    // the lever and the hot / cold dots
+    g.add(at(roundBox(1.6, 1.6, 9, 0.6, K.steel, 1), -1, height * 0.62, 0).rotateX(0.5));
+    g.add(at(sphere(0.9, K.red, 8, 6), 0, height * 0.45, 1.9));
+    g.add(at(sphere(0.9, K.blue, 8, 6), 0, height * 0.45, -1.9));
+    return { group: g, spout: [reach, height - 2] };
+}
+
+/** A plate (r, white with a coloured rim), lying flat with its origin at the bottom. */
+export function plate(r = 6, rim = K.blue) {
+    return group(at(cyl(r, r * 0.72, r * 0.16, K.white, 18), 0, r * 0.08, 0), at(torus(r * 0.86, r * 0.07, rim, 4, 22), 0, r * 0.17, 0).rotateX(Math.PI / 2));
+}
+
+/** A wire dish rack with plates standing in it (length L along x). */
+export function dishRack(L = 16, rng = Math.random) {
+    const g = new THREE.Group();
+    const wire = K.steelDark;
+    for (const s of [-1, 1]) {
+        g.add(at(box(L, 0.5, 0.5, wire), 0, 0.3, s * 4));
+        g.add(at(box(L, 0.5, 0.5, wire), 0, 4.5, s * 4));
+        for (let x = -L / 2; x <= L / 2 + 0.01; x += L / 4) g.add(at(box(0.4, 4.4, 0.4, wire), x, 2.4, s * 4));
+    }
+    for (let x = -L / 2; x <= L / 2 + 0.01; x += L / 4) g.add(at(box(0.4, 0.4, 8, wire), x, 0.3, 0));
+    const rims = [K.blue, K.red, K.yellow, K.green, K.blue];
+    for (let k = 0; k < 4; k++) {
+        const p = plate(5, rims[k]);
+        p.rotation.x = Math.PI / 2 + (rng() - 0.5) * 0.15;
+        p.position.set(-L / 2 + 2.5 + k * (L - 5) / 3, 5.4, 0.4);
+        g.add(p);
+    }
+    return g;
+}
+
+/** A bottle of washing-up liquid (green, with a red cap). */
+export function soapBottle(color = K.lime) {
+    const g = new THREE.Group();
+    g.add(at(roundBox(6, 14, 3.6, 1.6, color, 2), 0, 7, 0));
+    g.add(at(cyl(1, 1.4, 2.6, K.red, 8), 0, 15.2, 0));
+    g.add(at(box(4, 5, 0.3, K.white), 0, 7, 1.85));
+    return g;
+}
+
 /** A pendant lamp hanging from the ceiling (at y = top) over a point; returns { group, lightY }. */
 export function pendantLamp(top = 260, low = 150) {
     const g = new THREE.Group();

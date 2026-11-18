@@ -7,7 +7,7 @@ Guidance for working in this repository. Keep it in sync with the code.
 A 3D racing game of radio-controlled toy cars in the browser, in a **comic look** (cel shading with thick ink lines and halftone like the comic style of XIII,
 sound words like "KAWUMM!", inset comic panels): electric, gas and turbo cars, a turbo boost, weapons from crates (Death-Rally-like mechanics: prize money,
 kill bonus, buying and tuning cars), tournaments ("Pokale"), a profile with a comic avatar and levels, six detailed worlds (kids' room, garden, kitchen,
-workshop, supermarket, attic), bots, online multiplayer. Genre like classic RC racers – **the names, worlds, cars and art are our own: never copy another game**.
+workshop, supermarket, attic) with shortcuts, bridges, tunnels and loopings, a track editor ("Streckenbau", slot-car style), bots, online multiplayer. Genre like classic RC racers – **the names, worlds, cars and art are our own: never copy another game**.
 
 TurboToys is a **plugin of MatGame** (`../MatGame`: portal, accounts/guests, device sign-in, `/Admin`, discovery for the apps; read `../MatGame/CLAUDE.md`).
 It runs in four ways from one code base:
@@ -25,9 +25,12 @@ Stack: .NET 10, Razor class library, SignalR, EF Core + PostgreSQL 17 (MatGame's
 - `./scripts/redeploy.ps1` rebuilds and starts **MatGame's** local stack with every game: http://localhost:2770/turbotoys/ – how every change is tested.
 - Own image: `docker compose -f docker-compose.local.yml up -d --build` → http://localhost:2773/turbotoys/ (pgAdmin 2776, Postgres 2777).
 - Previews without a server: `node scripts/serve.mjs 2779` → `/turbotoys/dev/world.html?layout=kidsroom&view=chase|top|orbit&at=0.3&speed=0&time=day|dusk|night` (orbit = a drone above the road; also served by the plugin: the admin's track preview links to it),
-  `dev/cars.html`, `dev/sound-avatar.html`, `dev/cover.html`.
+  `dev/cars.html`, `dev/sound-avatar.html`, `dev/cover.html`; `dev/race.html?layout=<key>&cars=5&view=chase|demo` = a bots-only race with per-car lap/path/looping stats
+  (`?json=<layout file>` for editor experiments, world.html too; world.html `?track=<id>` shows a custom track via `api/tracks/{id}/design`).
 - Browser checks (Playwright with the installed Edge, `cd tools && npm install` once): `node tools/shot.mjs <url> <png>`, `node tools/play.mjs` (guest, menu,
-  garage, race), `node tools/race.mjs` (a whole race with the developer autopilot `localStorage turbotoys.autopilot = 1`), `node tools/admin.mjs <fresh server>`.
+  garage, race), `node tools/race.mjs` (a whole race with the developer autopilot `localStorage turbotoys.autopilot = 1`), `node tools/admin.mjs <fresh server>`,
+  `node tools/film.mjs <url> <prefix> [count] [everyMs]` (a series of screenshots + the page's #info text, e.g. of dev/race.html).
+  `node tools/editor.mjs [base]` (guest, Streckenbau: plug pieces, close, save, 3D preview, test drive).
   Screenshots go to `tmp/` (git-ignored) – look at them.
 - Migrations: `dotnet tool restore`, `dotnet ef migrations add <Name> --project src/TurboToys.Module --output-dir Data/Migrations` (design-time factory: MatGame's
   local Postgres 2775, `TURBOTOYS_DESIGN_DB` overrides it). The plugin migrates its schema at start and seeds missing content (`SeedLogic`).
@@ -54,17 +57,19 @@ Stack: .NET 10, Razor class library, SignalR, EF Core + PostgreSQL 17 (MatGame's
 
 ```
 src/TurboToys.Core      Data/Entities.cs (POCOs), Business/ Common (Actor, Guard, exceptions, ListRequest), Rules (Tuning + CarSpec, Economy, Progression, Avatars, Looks),
-                        PlayerRules (garage, avatar, race rewards, CupRules, Bots), SeedContent, Views (the JSON shapes), Game/ RaceRoom (the race in memory), Dtos, Layouts
-                        (reads the browser's data/layouts.json, embedded: lap plausibility, crate slots)
-src/TurboToys.Module    TurboToysModule (IGameModule), Data/AppDbContext + Migrations, Business/ PlayerLogic, GarageLogic, ContentLogic (cars, weapons, tracks, cups),
+                        PlayerRules (garage, avatar, race rewards, CupRules, Bots), DesignRules (players' own tracks), SeedContent, Views (the JSON shapes), Game/ RaceRoom (the race in memory), Dtos, Layouts
+                        (reads the browser's data/layouts.json, embedded, and the players' designs: lap plausibility, crate slots, design checks)
+src/TurboToys.Module    TurboToysModule (IGameModule), Data/AppDbContext + Migrations, Business/ PlayerLogic, GarageLogic, ContentLogic (cars, weapons, tracks, cups), DesignLogic (track editor),
                         RaceLogic, CupLogic, SettingLogic + SeedLogic, Game/ GameHub (+ HubErrors), RoomRegistry + GameTicker, Web/ Api, PlayerApp, Players, AppInfo,
                         AdminAssets, Pages/Admin/TurboToys (Übersicht, Spieler, Rennen, Autos, Strecken, Pokale, Waffen, Einstellungen)
 src/TurboToys.Module/wwwroot
   data/layouts.json     the six track layouts (centre line, widths, kicker ramps, boost arrows, crate rows) – shared with the server
-  js/game               main (entry), api (SDK glue), menu (all screens), ui, comic (sound words, captions, inset frames), hud, input, audio (WebAudio synth), avatar (SVG),
-                        catalog, showcase (menu background race, garage scene), world (track + theme + light)
+  js/game               main (entry), api (SDK glue), menu (all screens), ui, comic (sound words, captions, inset frames), hud, input, audio (WebAudio synth: engines,
+                        one-shots, music, reverb spaces incl. 'tunnel'), avatar (SVG), catalog, showcase (menu background race, garage scene), world (track + theme + light),
+                        editor (the track editor: pieces on a 40-unit grid, crossings/bridges, auto-close (A*), compile → layout, the 2D plan)
     render/             toon.js (materials, modelling kit, merging), postfx.js (the comic pass: ink from depth + normals, halftone, grain), stage.js (renderer, loop)
-    tracks/             track.js (sampling, locate, progress), builder.js (road, curbs, barriers, skirts, kickers, boost arrows, gantry)
+    tracks/             track.js (paths: the lap + branches, loopings as rail samples, locate/locateCar/advance, progress), builder.js (every path: road, curbs,
+                        barriers open where roads meet, skirts open over underpasses, decks, kickers, loop frames, tunnels, water, boost arrows, gantry)
     themes/             one world per layout (+ <key>-props.js) and common.js (theme contract and helpers)
     cars/               models.js (8 bodies × 3 drives, paint/decals), parts.js
     race/               race.js (one race), physics.js (arcade car physics, engine curves, turbo), bot.js, vehicle.js (the car as seen), weapons.js, fx.js (particles)
@@ -80,5 +85,12 @@ docs/PROTOCOL.md        API, hub, who decides what, offline
 - The browser simulates its own car (and the bot driver the bots); the room decides hit points, crates, laps and places (docs/PROTOCOL.md "Who decides what").
 - `CarSpec` (Tuning.SpecOf) is the only source of the car numbers; `js/game/catalog.js specOf` mirrors it only for the menu's background race.
 - Track geometry: `data/layouts.json` → `Track` (Catmull-Rom, one sample per unit, heights clamped ≥ 0, kicker ramps added on top). Layout keys are a contract (DB `Track.Layout`, themes, CSS thumbs): never rename one.
+  A track has **paths**: the main lap (the progress) and `branches` (shortcuts from `from` to `to`, sharing 12 units with the lap at both ends; `surface: 'water'`).
+  A car is on one path (`CarBody.path/pathIndex`; `index` = the main lap's matching sample = progress); `Track.locateCar` switches paths when the car leaves its road
+  and stands on another at the same height (forks, crossings), never onto a road at another height (bridges). **Loopings** are spliced into the lap as rail samples
+  (the locator skips them, `physics.stepRail` carries the car; too slow upside down = it falls). Bots choose shortcuts per pass (`BotDriver.choices`, `Track.advance`).
+- Custom tracks (editor): `Track` rows with `OwnerId` + `Design` (the compiled layout incl. `pieces`); `TrackRef.design` carries it to every client of a room;
+  the server checks designs with `Layouts.Validate` and uses `Layouts.Parse` (length with loopings, shortest route over shortcuts, pickup slots) for lap plausibility.
+  Themes must fit any track: set pieces only where `track.isNearRoad` is free.
 - The physics' wall offset follows `BARRIER_OFFSET` of builder.js; themes must keep `track.isNearRoad(x, z, ≥ 4)` free.
 - Scale: 1 unit = 10 cm, a car ≈ 4.2 long; speed in km/h on the HUD = units/s × 2.2.

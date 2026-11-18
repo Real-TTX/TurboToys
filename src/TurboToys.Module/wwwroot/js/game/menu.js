@@ -8,7 +8,8 @@ import { html, raw, esc, $, $$, toast, confirmBox, busy, icon, pips, bar } from 
 import { avatarSvg, AVATAR_LABELS } from './avatar.js';
 import { audio } from './audio.js';
 import { stage } from './render/stage.js';
-import { showDemo, Garage } from './showcase.js';
+import { showDemo, Garage, DemoRace } from './showcase.js';
+import { Design, Plan, PIECES, PALETTE_ORDER, pieceIcon, designOf } from './editor.js';
 import { DRIVE_NAMES, DRIVE_HINTS, BODY_NAMES, TIME_NAMES, DECAL_NAMES, money, lapTime } from './catalog.js';
 
 const root = () => document.getElementById('tt-menu');
@@ -31,7 +32,7 @@ const SCREENS = {};
 export const menu = {
     state,
 
-    /** Shows a screen ('auth' | 'main' | 'quick' | 'cups' | 'multi' | 'lobby' | 'garage' | 'profile' | 'leaderboard' | 'settings'). */
+    /** Shows a screen ('auth' | 'main' | 'quick' | 'cups' | 'multi' | 'lobby' | 'garage' | 'build' | 'profile' | 'leaderboard' | 'settings'). */
     async show(screen, params = {}) {
         state.screen = screen;
         document.body.dataset.screen = screen;
@@ -53,6 +54,7 @@ export const menu = {
             wireGo();
         }
         audio.music('menu');
+        audio.setSpace('room');
     },
 
     hide() {
@@ -229,6 +231,7 @@ SCREENS.main = async () => {
                 <button class="mega mega--blue" data-go="multi" ${session.mode !== 'online' ? 'disabled' : ''}><span class="kicker">${session.mode === 'online' ? 'Online' : 'nur online'}</span>Mehrspieler</button>
                 <button class="mega mega--green" data-go="garage"><span class="kicker">Tuning &amp; Lack</span>Garage</button>
                 <div class="small-row">
+                    <button class="btn" data-go="build">${raw(icon('track'))}Streckenbau</button>
                     <button class="btn" data-go="profile">${raw(icon('helmet'))}Profil</button>
                     <button class="btn" data-go="leaderboard" ${session.mode !== 'online' ? 'disabled' : ''}>${raw(icon('trophy'))}Rangliste</button>
                     <button class="btn" data-go="settings">${raw(icon('gauge'))}Einstellungen</button>
@@ -269,6 +272,7 @@ SCREENS.quick = async () => {
                     <button class="card track-card ${t.id === q.trackId ? 'on' : ''} ${t.locked ? 'locked' : ''}" data-track="${t.id}" ${t.locked ? 'disabled' : ''}>
                         <span class="thumb thumb--${t.layout} time--${t.timeOfDay.toLowerCase()}"></span>
                         <b>${t.name}</b><small>${TIME_NAMES[t.timeOfDay]} · ${t.laps} Runden${bestLapMs ? ` · Beste ${lapTime(bestLapMs)}` : ''}</small>
+                        ${t.custom ? raw('<span class="sticker sticker--small sticker--blue custom-tag">Eigene</span>') : ''}
                         ${t.locked ? raw(html`<span class="lock">ab Level ${t.unlockLevel}</span>`) : ''}
                     </button>`))}</div>
                 <div class="options">
@@ -672,6 +676,222 @@ SCREENS.leaderboard = async () => {
         </div>`;
     wireGo();
 };
+
+// ------------------------------------------------------------------ track editor ("Streckenbau")
+
+const WORLDS = [['kidsroom', 'Kinderzimmer'], ['garden', 'Gartenparty'], ['kitchen', 'Küche'], ['workshop', 'Werkstatt'], ['supermarket', 'Supermarkt'], ['attic', 'Dachboden']];
+const PIECE_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'ß', '´'];
+
+state.build = { id: null, name: 'Meine Strecke', theme: 'kidsroom', timeOfDay: 'Day', laps: 3, pieces: ['straight'], list: null, plan: null };
+
+SCREENS.build = async () => {
+    const b = state.build;
+    b.list = await api.get('/designs').catch(() => []);
+    const design = new Design(b.pieces);
+    b.plan?.dispose();
+    root().innerHTML = html`
+        <div class="builder">
+            <div class="builder-plan panel">
+                <canvas id="plan" aria-label="Bauplan der Strecke"></canvas>
+                <div class="builder-status" id="build-status"></div>
+                <div class="builder-hint">Ziehen: verschieben · Mausrad: zoomen · Tasten 1 … 0: Teile · Rücktaste: zurück</div>
+            </div>
+            <aside class="panel builder-side">
+                <header class="panel-head"><h2 class="title">Streckenbau</h2><button class="btn btn--ghost btn--small" data-go="main">Zurück</button></header>
+                <div class="form builder-meta">
+                    <label>Meine Strecken
+                        <select id="build-open">
+                            <option value="">+ Neue Strecke</option>
+                            ${b.list.map(d => raw(html`<option value="${d.id}" ${d.id === b.id ? 'selected' : ''}>${d.name}</option>`))}
+                        </select></label>
+                    <label>Name<input id="build-name" maxlength="40" value="${b.name}" /></label>
+                    <div class="builder-two">
+                        <label>Welt<select id="build-theme">${WORLDS.map(([k, n]) => raw(html`<option value="${k}" ${k === b.theme ? 'selected' : ''}>${n}</option>`))}</select></label>
+                        <label>Tageszeit<select id="build-time">${Object.entries(TIME_NAMES).map(([k, n]) => raw(html`<option value="${k}" ${k === b.timeOfDay ? 'selected' : ''}>${n}</option>`))}</select></label>
+                        <label>Runden<input id="build-laps" type="number" min="1" max="9" value="${b.laps}" /></label>
+                    </div>
+                </div>
+                <div class="builder-palette">${PALETTE_ORDER.map((kind, k) => raw(html`
+                    <button class="piece" data-piece="${kind}" title="${PIECES[kind].name} (${PIECE_KEYS[k]})">${raw(pieceIcon(kind))}<span>${PIECES[kind].name}</span><kbd>${PIECE_KEYS[k]}</kbd></button>`))}</div>
+                <div class="row">
+                    <button class="btn btn--small" id="build-undo">↶ Zurück</button>
+                    <button class="btn btn--small" id="build-close">Schließen</button>
+                    <button class="btn btn--small btn--ghost" id="build-fit">Zentrieren</button>
+                    <button class="btn btn--small btn--ghost" id="build-new">Neu</button>
+                </div>
+                <div class="row">
+                    <button class="btn" id="build-preview">${raw(icon('track'))}3D-Vorschau</button>
+                    <button class="btn btn--go" id="build-save">Speichern</button>
+                    <button class="btn btn--go" id="build-drive">${raw(icon('flag'))}Probefahrt</button>
+                    ${b.id ? raw('<button class="btn btn--danger btn--small" id="build-delete">Löschen</button>') : ''}
+                </div>
+            </aside>
+        </div>`;
+    wireGo();
+    const plan = new Plan($('#plan'));
+    plan.design = design;
+    b.plan = plan;
+    requestAnimationFrame(() => {
+        plan.resize();
+        plan.fit();
+    });
+
+    const status = () => {
+        b.pieces = [...design.pieces];
+        const length = Math.round(design.length);
+        const closed = design.closed;
+        $('#build-status').innerHTML = html`
+            <span class="sticker ${closed ? 'sticker--blue' : ''}">${closed ? 'Geschlossen' : 'Offen'}</span>
+            <b>${design.pieces.length} Teile</b> · ${(length / 10).toFixed(0)} m${length < 450 ? raw(' · <em>zu kurz (mind. 45 m)</em>') : ''}`;
+        $$('.piece').forEach(button => {
+            const problem = design.check(button.dataset.piece);
+            button.classList.toggle('blocked', !!problem);
+            button.title = `${PIECES[button.dataset.piece].name}${problem ? ` – ${problem}` : ''}`;
+        });
+        $('#build-close').disabled = closed;
+        plan.draw();
+    };
+    const put = kind => {
+        const problem = design.check(kind);
+        if (problem) {
+            toast(problem, 'bad', 1600);
+            return;
+        }
+        design.add(kind);
+        audio.play('click');
+        plan.ghost = null;
+        status();
+    };
+    $$('.piece').forEach(button => {
+        button.addEventListener('click', () => put(button.dataset.piece));
+        button.addEventListener('pointerenter', () => {
+            plan.ghost = { kind: button.dataset.piece, problem: design.check(button.dataset.piece) };
+            plan.draw();
+        });
+        button.addEventListener('pointerleave', () => {
+            plan.ghost = null;
+            plan.draw();
+        });
+    });
+    $('#build-undo').addEventListener('click', () => {
+        design.undo();
+        status();
+    });
+    $('#build-fit').addEventListener('click', () => plan.fit());
+    $('#build-close').addEventListener('click', () => {
+        const pieces = design.closing();
+        if (!pieces) {
+            toast('Kein Weg zurück zum Start gefunden – bau ein Stück in Richtung Start.', 'bad');
+            return;
+        }
+        for (const kind of pieces) design.add(kind);
+        status();
+        plan.fit();
+    });
+    $('#build-new').addEventListener('click', async () => {
+        if (design.pieces.length > 1 && !(await confirmBox('Neue Strecke', 'Den Bauplan leeren?', { yes: 'Neu anfangen' }))) return;
+        Object.assign(b, { id: null, name: 'Meine Strecke', pieces: ['straight'] });
+        SCREENS.build();
+    });
+    $('#build-open').addEventListener('change', e => {
+        const found = b.list.find(d => String(d.id) === e.target.value);
+        if (found) Object.assign(b, { id: found.id, name: found.name, theme: found.theme, timeOfDay: found.timeOfDay, laps: found.laps, pieces: designOf(found.design).pieces });
+        else Object.assign(b, { id: null, name: 'Meine Strecke', pieces: ['straight'] });
+        SCREENS.build();
+    });
+    const meta = () => {
+        b.name = $('#build-name').value.trim() || 'Meine Strecke';
+        b.theme = $('#build-theme').value;
+        b.timeOfDay = $('#build-time').value;
+        b.laps = Math.max(1, Math.min(9, Number($('#build-laps').value) || 3));
+    };
+    const ready = () => {
+        if (!design.closed) {
+            toast('Die Strecke ist noch offen – „Schließen“ baut den Rest.', 'bad');
+            return false;
+        }
+        if (design.length < 450) {
+            toast('Die Strecke ist zu kurz (mindestens 45 m).', 'bad');
+            return false;
+        }
+        return true;
+    };
+    const save = async () => {
+        meta();
+        if (!ready()) return null;
+        const saved = await api.post('/designs', {
+            id: b.id, name: b.name, theme: b.theme, timeOfDay: b.timeOfDay, laps: b.laps, design: design.compile({ name: b.name, theme: b.theme }),
+        });
+        b.id = saved.id;
+        toast('Gespeichert!', 'good', 1400);
+        return saved;
+    };
+    $('#build-save').addEventListener('click', e => busy(e.target, async () => {
+        if (await save()) SCREENS.build();
+    }));
+    $('#build-drive').addEventListener('click', e => busy(e.target, async () => {
+        const saved = await save();
+        if (saved) await api.invoke('QuickRace', { trackId: saved.id, bots: 3, botSkill: 2, laps: b.laps, weapons: true });
+    }));
+    $('#build-delete')?.addEventListener('click', async e => {
+        if (!(await confirmBox(b.name, 'Diese Strecke löschen?', { yes: 'Löschen', danger: true }))) return;
+        await busy(e.target, () => api.del(`/designs/${b.id}`));
+        Object.assign(b, { id: null, name: 'Meine Strecke', pieces: ['straight'] });
+        SCREENS.build();
+    });
+    $('#build-preview').addEventListener('click', () => {
+        meta();
+        if (!design.closed) {
+            toast('Erst schließen, dann gibt es die Vorschau.', 'bad');
+            return;
+        }
+        previewDesign(design.compile({ name: b.name, theme: b.theme }), b.timeOfDay);
+    });
+    status();
+};
+
+// keys in the editor: 1 … 0 (and the two keys right of them) plug pieces, Backspace takes the last one back
+addEventListener('keydown', e => {
+    if (state.screen !== 'build' || e.target.closest?.('input, select, textarea') || !state.build.plan) return;
+    const k = PIECE_KEYS.indexOf(e.key);
+    if (k >= 0) {
+        $$('.piece')[k]?.click();
+        e.preventDefault();
+    } else if (e.key === 'Backspace' || (e.key === 'z' && (e.ctrlKey || e.metaKey))) {
+        $('#build-undo')?.click();
+        e.preventDefault();
+    }
+});
+
+/** The 3D preview of a design: bots race on it (the menu steps aside), a button brings the plan back. */
+async function previewDesign(layout, timeOfDay) {
+    const overlay = document.createElement('div');
+    overlay.className = 'builder-preview';
+    overlay.innerHTML = html`<span class="sticker">Vorschau</span><button class="btn btn--go" id="preview-back">Zurück zum Bauplan</button>`;
+    root().hidden = true;
+    document.body.appendChild(overlay);
+    let race = null;
+    let closed = false;
+    const close = () => {
+        closed = true;
+        overlay.remove();
+        race?.dispose();
+        root().hidden = false;
+        menu.show('build');
+    };
+    overlay.querySelector('#preview-back').addEventListener('click', close);
+    try {
+        race = await new DemoRace({ layout: layout.theme, design: layout, timeOfDay: String(timeOfDay).toLowerCase(), cars: 4 }).build();
+        if (closed) {
+            race.dispose();
+            return;
+        }
+        stage.show(race.scene, race.camera, (dt, t) => race.frame(dt, t));
+    } catch (error) {
+        toast(error.message, 'bad');
+        close();
+    }
+}
 
 // ------------------------------------------------------------------ settings
 

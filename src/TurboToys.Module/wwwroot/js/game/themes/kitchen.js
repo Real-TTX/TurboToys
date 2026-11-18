@@ -8,6 +8,7 @@ import { floor, scatter, lamp } from './common.js';
 import {
     K, counterRun, wallCabinets, oven, pot, pan, fridge, chair, table, pantry, cerealBox, jar, can, apple, orange, banana, fallenBowl, catBowl,
     sleepingCat, mopBucket, paperRoll, spoon, milk, egg, pendantLamp, colander, sponge, rollingPin, measuringJug, ovenMitt,
+    tap, plate, dishRack, soapBottle,
     flat, toon, box, roundBox, cyl, sphere, cone, torus, shape, at, group, canvasTexture,
 } from './kitchen-props.js';
 import { fx, fxLayer } from '../render/toon.js';
@@ -182,6 +183,263 @@ function drawClock(ctx, w, h) {
     ctx.stroke();
 }
 
+/** The doors of the sink cabinet (side walls of an extrusion: u runs along the wall in units, v over the height). */
+function drawCabinetDoors(ctx, w, h) {
+    ctx.fillStyle = K.cabinet;
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = '#c9b98f';
+    ctx.lineWidth = 6;
+    ctx.strokeRect(10, 14, w - 20, h - 28);
+    ctx.fillStyle = '#9aa3ab';
+    ctx.fillRect(w * 0.42, h - 40, w * 0.16, 9);
+    ctx.fillStyle = '#34373d';
+    ctx.fillRect(0, 0, w, 10);
+}
+
+/**
+ * The sink unit of a water shortcut (a branch with style 'sink'): a stainless steel counter top just under the raised road, reaching from the
+ * main road (the long way round) over the branch; the branch runs through a sunken basin cut into it (the water is the branch's road).
+ * A swan-neck tap pours into the basin, plates lean against its walls, foam floats, a dish rack and the washing-up liquid stand on the steel.
+ * Returns null when the branch is not raised (the sink needs a counter to sink into).
+ * @returns {{ group: THREE.Group, update: (dt:number, time:number) => void, keepOut: Array<[number, number, number]> } | null}
+ */
+function sinkUnit(track, branch, rng) {
+    const n = track.count;
+    const span = branch.span;
+    const mainAt = k => track.wrap(branch.from + k);
+    // the top of the counter: just under the lowest road it carries (the main road of the span and the branch's ends)
+    let top = Infinity;
+    for (let k = 0; k <= span; k++) top = Math.min(top, track.heightAt(mainAt(k)));
+    for (let i = 0; i < branch.count; i++) if (i < 12 || i > branch.count - 13) top = Math.min(top, branch.heightAt(i));
+    top -= 0.12;
+    if (top < 6) return null;
+    // which side of the main road the branch runs on, and which side of the branch is away from the main road
+    const mid = Math.floor(branch.count / 2);
+    let near = branch.from;
+    let bestD = Infinity;
+    for (let k = 0; k <= span; k++) {
+        const i = mainAt(k);
+        const d = (track.x[i] - branch.x[mid]) ** 2 + (track.z[i] - branch.z[mid]) ** 2;
+        if (d < bestD) {
+            bestD = d;
+            near = i;
+        }
+    }
+    const mn = track.normalAt(near);
+    const inner = Math.sign((branch.x[mid] - track.x[near]) * mn.nx + (branch.z[mid] - track.z[near]) * mn.nz) || 1;
+    const bn = branch.normalAt(mid);
+    const away = -Math.sign((track.x[near] - branch.x[mid]) * bn.nx + (track.z[near] - branch.z[mid]) * bn.nz) || 1;
+    const LEDGE = 14; // the steel beyond the basin's far side (the tap stands there)
+
+    // ---- the outline: the main road's outer edge from the fork to the join, back along the branch's far side
+    const outline = [];
+    for (let k = 0; k <= span; k++) {
+        const i = mainAt(k);
+        const { nx, nz } = track.normalAt(i);
+        const l = -inner * (track.w[i] / 2 + 5.5);
+        outline.push(new THREE.Vector2(track.x[i] + nx * l, track.z[i] + nz * l));
+    }
+    for (let i = branch.count - 1; i >= 0; i--) {
+        const { nx, nz } = branch.normalAt(i);
+        const l = away * (branch.w[i] / 2 + LEDGE);
+        outline.push(new THREE.Vector2(branch.x[i] + nx * l, branch.z[i] + nz * l));
+    }
+    // ---- the basin: where the water runs below the steel
+    let h0 = -1;
+    let h1 = -1;
+    let low = Infinity;
+    for (let i = 0; i < branch.count; i++) {
+        if (branch.heightAt(i) < top - 0.05) {
+            if (h0 < 0) h0 = i;
+            h1 = i;
+            low = Math.min(low, branch.heightAt(i));
+        }
+    }
+    if (h0 < 0 || h1 - h0 < 10) return null;
+    const hole = [];
+    for (let i = h0; i <= h1; i++) {
+        const { nx, nz } = branch.normalAt(i);
+        const l = branch.w[i] / 2 + 0.3;
+        hole.push(new THREE.Vector2(branch.x[i] + nx * l, branch.z[i] + nz * l));
+    }
+    for (let i = h1; i >= h0; i--) {
+        const { nx, nz } = branch.normalAt(i);
+        const l = -(branch.w[i] / 2 + 0.3);
+        hole.push(new THREE.Vector2(branch.x[i] + nx * l, branch.z[i] + nz * l));
+    }
+
+    const g = new THREE.Group();
+    const floorY = low - 1.4;
+    const steel = toon(K.steel);
+    const steelDark = toon(K.steelDark);
+    const doors = toon(0xffffff, { map: canvasTexture(128, 128, drawCabinetDoors, { repeat: [1 / 26, 1 / floorY] }) });
+    /** An extruded slab of the outline (y0 … y1), optionally with the basin cut out; shape (x, z) → world through a quarter turn about x. */
+    const slab = (y0, y1, withHole, caps, sides) => {
+        const shape = new THREE.Shape(outline);
+        if (withHole) shape.holes.push(new THREE.Path(hole));
+        const geometry = new THREE.ExtrudeGeometry(shape, { depth: y1 - y0, bevelEnabled: false, curveSegments: 1, steps: 1 });
+        // one mesh per material group (the world merges by material and ignores material arrays)
+        const parts = new THREE.Group();
+        geometry.groups.forEach(({ start, count, materialIndex }) => {
+            const part = new THREE.BufferGeometry();
+            for (const [name, a] of Object.entries(geometry.attributes)) {
+                part.setAttribute(name, new THREE.Float32BufferAttribute(a.array.slice(start * a.itemSize, (start + count) * a.itemSize), a.itemSize));
+            }
+            const mesh = new THREE.Mesh(part, materialIndex === 0 ? caps : sides);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            parts.add(mesh);
+        });
+        geometry.dispose();
+        parts.rotation.x = Math.PI / 2;
+        parts.position.y = y1;
+        return parts;
+    };
+    g.add(slab(0, floorY, false, steelDark, doors));
+    // double-sided: the basin's walls are seen from inside the hole
+    g.add(slab(floorY, top, true, steel, toon(K.steel, { side: THREE.DoubleSide })));
+    // the bottom of the basin follows the water just below it (it hides the road's deck under the transparent water)
+    {
+        const positions = [];
+        const indices = [];
+        for (let i = h0; i <= h1; i++) {
+            const { nx, nz } = branch.normalAt(i);
+            const l = branch.w[i] / 2 + 0.3;
+            const y = branch.heightAt(i) - 0.35;
+            positions.push(branch.x[i] + nx * l, y, branch.z[i] + nz * l, branch.x[i] - nx * l, y, branch.z[i] - nz * l);
+            if (i > h0) {
+                const a = (i - h0 - 1) * 2;
+                indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+            }
+        }
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geometry.setIndex(indices);
+        geometry.computeVertexNormals();
+        g.add(new THREE.Mesh(geometry, toon(K.steelDark, { side: THREE.DoubleSide })));
+    }
+    // a rim along the basin edge and a dark plinth line where the steel sits on the cabinet
+    const rimLine = (lateral, y, from, to) => {
+        const pts = [];
+        for (let i = from; i <= to; i += 2) {
+            const { nx, nz } = branch.normalAt(i);
+            pts.push(new THREE.Vector3(branch.x[i] + nx * lateral, y, branch.z[i] + nz * lateral));
+        }
+        if (pts.length < 2) return;
+        const tube = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), pts.length * 2, 0.45, 6, false), steelDark);
+        g.add(tube);
+    };
+    for (const s of [1, -1]) rimLine(s * (branch.w[mid] / 2 + 0.6), top + 0.25, h0 + 6, h1 - 6);
+
+    // ---- things in and around the basin (none on the water lane itself: plates lean against the walls, foam floats at the edges)
+    const pointOn = (i, lateral, y) => {
+        const { nx, nz } = branch.normalAt(i);
+        return new THREE.Vector3(branch.x[i] + nx * lateral, y ?? branch.heightAt(i), branch.z[i] + nz * lateral);
+    };
+    const yawAt = i => Math.atan2(branch.tx[i], branch.tz[i]);
+    const rims = [K.blue, K.red, K.yellow, K.green, K.teal];
+    for (let k = 0; k < 5; k++) {
+        const i = Math.round(h0 + 8 + ((h1 - h0 - 16) * (k + rng() * 0.5)) / 5);
+        const side = k % 2 ? 1 : -1;
+        const r = rng.range(4.2, 5.6);
+        const p = plate(r, rims[k]);
+        // the holder's +x points to the right of the water lane: the plate stands a little inward, its top leaning on the wall
+        const holder = new THREE.Group();
+        p.rotation.z = -side * (Math.PI / 2 - 0.35);
+        p.position.set(side * r * 0.3, r * 0.9, 0);
+        holder.add(p);
+        holder.position.copy(pointOn(i, side * (branch.w[i] / 2 - 0.4), branch.heightAt(i) - 1.2));
+        holder.rotation.y = yawAt(i);
+        g.add(holder);
+    }
+    // a pot soaking in the corner and the drain (a steel ring with its plug on a chain)
+    {
+        const i = Math.round(h0 + (h1 - h0) * 0.82);
+        const side = -away;
+        const soak = pot(K.red, 6);
+        soak.position.copy(pointOn(i, side * (branch.w[i] / 2 - 2.5), branch.heightAt(i) - 2.4));
+        soak.rotation.set(0.25 * side, rng() * 6, 0.1);
+        g.add(soak);
+        const lowest = (() => {
+            let best = h0;
+            for (let j = h0; j <= h1; j++) if (branch.heightAt(j) < branch.heightAt(best)) best = j;
+            return best;
+        })();
+        const drain = torus(2.2, 0.45, K.steelDark, 6, 18);
+        drain.rotation.x = Math.PI / 2;
+        drain.position.copy(pointOn(lowest, 0, branch.heightAt(lowest) + 0.08));
+        g.add(drain);
+        g.add(at(cyl(1.8, 1.8, 0.2, K.black, 14), drain.position.x, drain.position.y, drain.position.z));
+        const plugAt = pointOn(lowest + 3, away * (branch.w[lowest] / 2 - 1.2), branch.heightAt(lowest) + 0.4);
+        g.add(at(cyl(2, 1.6, 0.9, K.black, 12), plugAt.x, plugAt.y, plugAt.z));
+        for (let k = 1; k < 7; k++) {
+            const t = k / 7;
+            const link = torus(0.35, 0.12, K.steel, 4, 6);
+            link.position.set(drain.position.x + (plugAt.x - drain.position.x) * t, drain.position.y + 0.1, drain.position.z + (plugAt.z - drain.position.z) * t);
+            link.rotation.set(Math.PI / 2, 0, k);
+            g.add(link);
+        }
+    }
+    // foam along the walls
+    for (let k = 0; k < 26; k++) {
+        const i = Math.round(h0 + 4 + rng() * (h1 - h0 - 8));
+        const side = rng() < 0.5 ? 1 : -1;
+        const b = sphere(rng.range(0.6, 1.7), K.white, 8, 6);
+        b.scale.y = 0.75;
+        b.position.copy(pointOn(i, side * (branch.w[i] / 2 - rng.range(0.4, 2.2)), branch.heightAt(i) + 0.15));
+        g.add(b);
+    }
+
+    // ---- the tap on the far ledge, pouring into the basin (the stream is animated)
+    const ti = Math.round(h0 + (h1 - h0) * 0.38);
+    const tapAt = pointOn(ti, away * (branch.w[ti] / 2 + 5.5), top);
+    const { nx: tnx, nz: tnz } = branch.normalAt(ti);
+    const theTap = tap(10.5, 24);
+    theTap.group.position.copy(tapAt);
+    // its +x (the neck) points over the water
+    theTap.group.rotation.y = Math.atan2(away * tnz, -away * tnx);
+    g.add(theTap.group);
+    const mouth = new THREE.Vector3(theTap.spout[0], theTap.spout[1], 0).applyMatrix4(new THREE.Matrix4().makeRotationY(theTap.group.rotation.y)).add(tapAt);
+    const fall = mouth.y - branch.heightAt(ti);
+    const stream = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 1.05, fall, 10, 1, true), fx('#bfe8ff', { opacity: 0.7 }));
+    stream.position.set(mouth.x, mouth.y - fall / 2, mouth.z);
+    const splash = new THREE.Mesh(new THREE.TorusGeometry(2, 0.35, 5, 18), fx('#ffffff', { opacity: 0.8 }));
+    splash.rotation.x = Math.PI / 2;
+    splash.position.set(mouth.x, mouth.y - fall + 0.2, mouth.z);
+    const water = group(stream, splash);
+    water.userData.keep = true;
+    g.add(water);
+    // the washing-up liquid and a sponge beside the tap, the dish rack on the steel between the basin and the main road
+    const sideOf = (i, lateral) => pointOn(i, lateral, top);
+    {
+        const p = sideOf(ti + 14, away * (branch.w[ti] / 2 + 6));
+        g.add(at(soapBottle(), p.x, p.y, p.z, rng() * 6));
+        const q = sideOf(ti - 14, away * (branch.w[ti] / 2 + 7));
+        g.add(at(sponge(), q.x, q.y, q.z, yawAt(ti) + 0.3));
+    }
+    {
+        // halfway between the basin and the main road (if the steel is wide enough there)
+        const i = mid;
+        const p = new THREE.Vector3((branch.x[i] + track.x[near]) / 2, top, (branch.z[i] + track.z[near]) / 2);
+        if (!track.isNearRoad(p.x, p.z, 4 + 9)) g.add(at(dishRack(16, rng), p.x, p.y, p.z, yawAt(i) + Math.PI / 2));
+    }
+
+    const keepOut = [];
+    for (let i = 0; i < branch.count; i += 8) keepOut.push([branch.x[i], branch.z[i], branch.w[i] / 2 + LEDGE + 2]);
+    for (let k = 0; k <= span; k += 8) keepOut.push([track.x[mainAt(k)], track.z[mainAt(k)], track.w[mainAt(k)] / 2 + 8]);
+    keepOut.push([(branch.x[mid] + track.x[near]) / 2, (branch.z[mid] + track.z[near]) / 2, Math.sqrt(bestD) / 2 + 4]);
+    return {
+        group: g,
+        keepOut,
+        update(dt, time) {
+            stream.scale.x = stream.scale.z = 1 + Math.sin(time * 23) * 0.12;
+            const s = 1 + ((time * 1.6) % 1) * 1.4;
+            splash.scale.set(s, s, 1);
+            splash.material.opacity = 0.8 * (1 - ((time * 1.6) % 1));
+        },
+    };
+}
+
 export default {
     key: 'kitchen',
     name: 'Küchen-Chaos',
@@ -204,9 +462,12 @@ export default {
         const room = { minX: b.minX - 90, maxX: b.maxX + 95, minZ: b.minZ - 90, maxZ: b.maxZ + 95, height: 260 };
         const reserved = [];
         const reserve = (x, z, r) => reserved.push({ x, z, r });
+        // set pieces under the road (the sink unit): nothing else may stand inside them
+        const blocked = [];
+        const isBlocked = (x, z, r = 0) => blocked.some(([bx, bz, br]) => Math.hypot(bx - x, bz - z) < br + r);
         const isFree = (x, z, r = 0) => x > room.minX + 66 + r && x < room.maxX - 12 - r && z > room.minZ + 66 + r && z < room.maxZ - 12 - r
-            && !reserved.some(p => Math.hypot(p.x - x, p.z - z) < p.r + r);
-        const clear = (x, z, r) => !track.isNearRoad(x, z, 4.5 + r);
+            && !reserved.some(p => Math.hypot(p.x - x, p.z - z) < p.r + r) && !isBlocked(x, z, r);
+        const clear = (x, z, r) => !track.isNearRoad(x, z, 4.5 + r) && !isBlocked(x, z, r);
         /**
          * Places a piece beside the road: its whole footprint (or opts.reach) keeps 4.5 off the road; when the wanted spot is too close it moves
          * to the nearest free spot nearby (unless opts.exact). Returns whether it was placed.
@@ -217,7 +478,7 @@ export default {
                 const d = k === 0 ? 0 : 2 + k * 0.8;
                 const px = x + Math.cos(k * 2.39996) * d;
                 const pz = z + Math.sin(k * 2.39996) * d;
-                if (track.isNearRoad(px, pz, 4.5 + reach)) continue;
+                if (track.isNearRoad(px, pz, 4.5 + reach) || isBlocked(px, pz, reach)) continue;
                 object.position.set(px, y, pz);
                 object.rotation.y = yaw;
                 root.add(object);
@@ -230,6 +491,16 @@ export default {
         const H = room.height;
         const cxR = (room.minX + room.maxX) / 2;
         const czR = (room.minZ + room.maxZ) / 2;
+
+        // ---------------------------------------------------------- the sink unit under the raised road: its basin carries the water shortcut
+        for (const branch of track.branches) {
+            if (branch.data?.style !== 'sink') continue;
+            const sink = sinkUnit(track, branch, rng);
+            if (!sink) continue;
+            root.add(sink.group);
+            blocked.push(...sink.keepOut);
+            animations.push(sink.update);
+        }
 
         // ---------------------------------------------------------- floor and walls
         const tiles = floor({ track, size: 1000, draw: drawTiles, tile: 60 });
@@ -376,12 +647,14 @@ export default {
         put(catBowl(true, K.blue), room.maxX - 40, radZ - 92, 13, -0.4);
 
         // ---------------------------------------------------------- the table over the track (legs beside the road) and the chairs
-        const T = table(150, 100);
+        // the official lap crosses itself under the table (the bridge between the legs); other tracks: the nearest spot to the middle where the legs fit
+        const T = table(160, 90);
+        const centre = track.key === 'kitchen' ? [0, 0] : [b.cx, b.cz];
         let tableAt = null;
-        for (let r = 0; r <= 30 && !tableAt; r += 3) {
+        for (let r = 0; r <= 60 && !tableAt; r += 3) {
             for (let k = 0; k < 12 && !tableAt; k++) {
-                const x = 20 + Math.cos(k * 0.52) * r;
-                const z = 0 + Math.sin(k * 0.52) * r;
+                const x = centre[0] + Math.cos(k * 0.52) * r;
+                const z = centre[1] + Math.sin(k * 0.52) * r;
                 if (T.legs.every(([lx, lz]) => clear(x + lx, z + lz, 5))) tableAt = [x, z];
             }
         }
@@ -420,10 +693,12 @@ export default {
             ch.rotation.x = -Math.PI / 2;
             ch.position.set(0, 23, 0);
             const holder = group(ch);
-            for (const [x, z] of [[150, 120], [90, 140], [-60, 150], [160, 60]]) {
-                if (clear(x, z, 34) && isFree(x, z, 30)) {
+            // lying on its back the chair reaches far (the backrest): its whole footprint keeps off the road
+            holder.rotation.y = rng() * Math.PI * 2;
+            const reach = footprint(holder);
+            for (const [x, z] of [[150, 120], [90, 140], [-60, 150], [160, 60], [-150, 130], [230, 100]]) {
+                if (clear(x, z, reach) && isFree(x, z, 30)) {
                     holder.position.set(x, 0, z);
-                    holder.rotation.y = rng() * Math.PI * 2;
                     root.add(holder);
                     reserve(x, z, 34);
                     break;
@@ -439,7 +714,7 @@ export default {
                 const a = dirYaw + (rng() - 0.5) * 1.6 * (1 - t * 0.4);
                 const x = x0 + Math.sin(a) * t * radius + (rng() - 0.5) * 6;
                 const z = z0 + Math.cos(a) * t * radius + (rng() - 0.5) * 6;
-                if (track.isNearRoad(x, z, 4.2)) continue;
+                if (track.isNearRoad(x, z, 4.2) || isBlocked(x, z, 1)) continue;
                 const s = rng.range(0.8, 1.2);
                 cerealItems.push({ x, y: 0.55 * s, z, rx: Math.PI / 2 + (rng() - 0.5) * 0.5, rz: rng() * 6, s, color: rng.pick(['#e8a03a', '#f2c25a', '#d07a2a', '#e86a4a', '#f6d16a']) });
             }
@@ -461,6 +736,19 @@ export default {
             const sp = spoon();
             sp.rotation.z = 0.3;
             put(group(sp), -56, -16, 14, 0.8);
+        }
+        // the cereal-box tunnels lose rings at their ends (beside the road)
+        for (const t of track.tunnels) {
+            if (t.style !== 'cereal') continue;
+            for (const end of [t.start, t.end]) {
+                const i = t.path.wrap(end);
+                if (t.path.heightAt(i) > 1) continue;
+                const { nx, nz } = t.path.normalAt(i);
+                for (const s of [1, -1]) {
+                    const l = s * (t.path.w[i] / 2 + 9);
+                    spill(t.path.x[i] + nx * l, t.path.z[i] + nz * l, 26, 16, Math.atan2(nx * s, nz * s));
+                }
+            }
         }
         {
             const bowlSpot = [-80, 38];

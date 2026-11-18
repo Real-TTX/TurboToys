@@ -611,6 +611,9 @@ namespace TurboToys.Data.Migrations
                         .HasMaxLength(400)
                         .HasColumnType("character varying(400)");
 
+                    b.Property<string>("Design")
+                        .HasColumnType("text");
+
                     b.Property<bool>("IsEnabled")
                         .HasColumnType("boolean");
 
@@ -626,6 +629,9 @@ namespace TurboToys.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(60)
                         .HasColumnType("character varying(60)");
+
+                    b.Property<long?>("OwnerId")
+                        .HasColumnType("bigint");
 
                     b.Property<int>("SortOrder")
                         .HasColumnType("integer");
@@ -646,6 +652,8 @@ namespace TurboToys.Data.Migrations
                         .HasColumnType("bigint");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("OwnerId");
 
                     b.ToTable("Track", "turbotoys");
                 });
@@ -756,6 +764,14 @@ namespace TurboToys.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Race");
+                });
+
+            modelBuilder.Entity("TurboToys.Data.Track", b =>
+                {
+                    b.HasOne("TurboToys.Data.Player", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerId")
+                        .OnDelete(DeleteBehavior.Cascade);
                 });
 
             modelBuilder.Entity("TurboToys.Data.Race", b =>

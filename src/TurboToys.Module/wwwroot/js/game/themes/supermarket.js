@@ -1,6 +1,8 @@
 // TurboToys · themes/supermarket.js – "Supermarkt-Sprint": a supermarket after hours. A course taped onto the glossy tiles, long shelf aisles full
 // of invented products (instanced), end caps with sale displays, a fruit & veg island, freezer chests with glowing lids and a wall of freezers,
 // checkouts, shopping carts, pallets of boxes, comic sale signs hanging from the ceiling, rows of ceiling lights mirrored in the floor.
+// Raised roads run on rows of pallets with cartons (steel posts beside underpasses), every looping stands in an aisle between two gondolas,
+// an aisle shortcut (branch style 'aisle') runs between shelves. Hand-placed pieces of the official lap only when track.key === 'supermarket'.
 
 import * as THREE from 'three';
 import { toon, flat, fx, fxLayer, box, roundBox, cyl, sphere, cone, at, group, canvasTexture, LAYER_FX } from '../render/toon.js';
@@ -161,7 +163,7 @@ export default {
     },
     road: {
         surface: '#c3ccd6', surfaceDark: '#9aa6b3', line: null, edge: null, pattern: roadPattern,
-        curb: ['#f6c638', '#1d1a17'], barrier: 'cans', barrierColors: ['#e2392f', '#f7f3ea', '#2f6fd0', '#f6c638', '#3f9b4b'], skirt: '#5d6570',
+        curb: ['#f6c638', '#1d1a17'], barrier: 'cans', barrierColors: ['#e2392f', '#f7f3ea', '#2f6fd0', '#f6c638', '#3f9b4b'], skirt: '#7d8793',
         kicker: ['#e2392f', '#f7f3ea', '#c9ced6'], gantry: '#22386b',
     },
 
@@ -169,9 +171,26 @@ export default {
         const q = quality === 'low' ? 0.5 : quality === 'medium' ? 0.75 : 1;
         const time = timeOfDay ?? 'day';
         const b = track.bounds;
-        const room = { minX: b.minX - 115, maxX: b.maxX + 115, minZ: b.minZ - 110, maxZ: b.maxZ + 180 };
+        const room = { minX: b.minX - 115, maxX: b.maxX + 115, minZ: b.minZ - 150, maxZ: b.maxZ + 180 };
+        // the hand-placed set pieces of the official layout (custom tracks of the editor get the generic, road-avoiding furniture only)
+        const official = track.key === 'supermarket';
 
-        const free = (x, z, r) => !track.isNearRoad(x, z, r + 5);
+        // footprints of the placed furniture (circles): set pieces must not stand in each other either
+        const taken = [];
+        const reserve = (x, z, r) => taken.push({ x, z, r });
+        const reserveRect = (cx, cz, yaw, L, D) => {
+            const c = Math.cos(yaw);
+            const s = Math.sin(yaw);
+            const r = Math.min(L, D) / 2;
+            const n = Math.max(1, Math.ceil(Math.max(L, D) / r));
+            for (let k = 0; k <= n; k++) {
+                const u = L >= D ? -L / 2 + r + ((L - 2 * r) * k) / n : 0;
+                const v = L >= D ? 0 : -D / 2 + r + ((D - 2 * r) * k) / n;
+                reserve(cx + u * c + v * s, cz - u * s + v * c, r);
+            }
+        };
+        const clash = (x, z, r = 0) => taken.some(t => Math.hypot(t.x - x, t.z - z) < t.r + r);
+        const free = (x, z, r) => !track.isNearRoad(x, z, r + 5) && !clash(x, z, r);
         const freeRect = (cx, cz, yaw, L, D, margin = 3) => {
             const c = Math.cos(yaw);
             const s = Math.sin(yaw);
@@ -179,7 +198,7 @@ export default {
                 for (const v of [-D / 2, 0, D / 2]) {
                     const x = cx + u * c + v * s;
                     const z = cz - u * s + v * c;
-                    if (track.isNearRoad(x, z, margin + 4)) return false;
+                    if (track.isNearRoad(x, z, margin + 4) || clash(x, z, 1)) return false;
                 }
             }
             return true;
@@ -208,6 +227,7 @@ export default {
                     object.position.set(px, 0, pz);
                     object.rotation.y = yaw;
                     root.add(object);
+                    reserveRect(px, pz, yaw, L, D);
                     return object;
                 }
             }
@@ -219,6 +239,7 @@ export default {
             object.position.set(p.x, 0, p.z);
             object.rotation.y = yaw;
             root.add(object);
+            reserve(p.x, p.z, r);
             return object;
         };
 
@@ -254,17 +275,18 @@ export default {
         root.add(ground);
         buildRoom(root, room, time);
 
-        // ---- shelf gondolas: two long ones inside the east loop, a row of aisles north of the track, drinks along the west wall
-        const placeGondola = (x, z, yaw, L, cats, { sides = [1, -1], levels = 5, header = true, caps = true } = {}) => {
+        // ---- shelf gondolas: aisles around the looping and along the aisle shortcut, a row of aisles north of the track, drinks along the west wall
+        const placeGondola = (x, z, yaw, L, cats, { sides = [1, -1], levels = 5, header = true, caps = true, D = 32, margin = 3 } = {}) => {
             let length = L;
             const extra = caps ? 46 : 6;
-            while (length >= 40 && !freeRect(x, z, yaw, length + extra, 34)) length -= 10;
+            while (length >= 40 && !freeRect(x, z, yaw, length + extra, D + 2, margin)) length -= 10;
             if (length < 40) return null;
             const color = aisleColors[cats[0]];
-            const { group: g, boards } = gondola({ L: length, color, priceMaterial, sides, levels });
+            const { group: g, boards } = gondola({ L: length, D, color, priceMaterial, sides, levels });
             g.position.set(x, 0, z);
             g.rotation.y = yaw;
             root.add(g);
+            reserveRect(x, z, yaw, length + extra, D + 2);
             g.updateMatrixWorld(true);
             for (const board of boards) {
                 const cat = board.dir > 0 ? cats[0] : cats[1] ?? cats[0];
@@ -307,11 +329,65 @@ export default {
             g.add(burst, at(box(0.8, 30, 0.8, S.shelfDark), x + end * 10, 40, 0));
         };
 
-        // inside the east loop: two long gondolas along z
-        const eastA = placeGondola(60, 92, Math.PI / 2, 104, ['breakfast', 'snacks']);
-        const eastB = placeGondola(122, 92, Math.PI / 2, 104, ['cans', 'household']);
-        void eastA;
-        void eastB;
+        // the furniture under the raised roads (pallets with cartons, steel posts beside underpasses) – follows any track
+        buildDeckStacks(track, batch);
+
+        // every looping stands in an aisle: a gondola on both sides of its straight, a burst sign on the frame
+        const loopCats = [['drinks', 'snacks'], ['cans', 'breakfast']];
+        track.loops.forEach((loop, k) => {
+            const w = track.w[loop.entry];
+            const yaw = Math.atan2(-loop.T[1], loop.T[0]);
+            const lateral = loop.D / 2 + w / 2 + 3.5 + 6 + 17;
+            for (const side of [1, -1]) {
+                const x = loop.P[0] + loop.N[0] * lateral * side + loop.T[0] * 4;
+                const z = loop.P[2] + loop.N[1] * lateral * side + loop.T[1] * 4;
+                placeGondola(x, z, yaw, 110, loopCats[(k + (side > 0 ? 0 : 1)) % 2], { caps: false });
+            }
+            const burst = burstSign('LOOPING!', { radius: 10, fill: S.yellow, fg: S.red, size: 70 });
+            burst.position.set(loop.P[0], loop.P[1] + loop.radius * 2 + 12.5, loop.P[2]);
+            burst.rotation.y = Math.atan2(loop.T[0], loop.T[1]);
+            root.add(burst);
+        });
+
+        // an aisle shortcut runs between two shelves (narrower ones, close to the road): it reads as a gap in the shop
+        for (const branch of track.branches) {
+            if (branch.style !== 'aisle') continue;
+            const i0 = Math.round(branch.count * 0.2);
+            const i1 = Math.round(branch.count * 0.8);
+            const dx = branch.x[i1] - branch.x[i0];
+            const dz = branch.z[i1] - branch.z[i0];
+            const length = Math.hypot(dx, dz);
+            const tx = dx / length;
+            const tz = dz / length;
+            const yaw = Math.atan2(-tz, tx);
+            const lateral = branch.w[Math.round(branch.count / 2)] / 2 + 1.9 + 4.5 + 12;
+            const mid = Math.round(branch.count / 2);
+            const cx = branch.x[mid];
+            const cz = branch.z[mid];
+            for (const side of [1, -1]) {
+                // the longest shelf that fits beside the aisle (shifted a little along it and away from it)
+                let best = null;
+                for (let shift = -24; shift <= 24; shift += 4) {
+                    for (let away = -2; away <= 14; away += 2) {
+                        const x = cx + tx * shift - tz * (lateral + away) * side;
+                        const z = cz + tz * shift + tx * (lateral + away) * side;
+                        let L = Math.round(length / 4) * 4 + 12;
+                        while (L >= 40 && !freeRect(x, z, yaw, L + 6, 24, 1)) L -= 4;
+                        // long and close to the aisle
+                        if (L >= 40 && (!best || L - away * 3 > best.score)) best = { x, z, L, score: L - away * 3 };
+                    }
+                }
+                if (best) placeGondola(best.x, best.z, yaw, best.L, side > 0 ? ['breakfast', 'snacks'] : ['household', 'cans'], { caps: false, D: 22, margin: 1 });
+            }
+            // the "wet floor" A-frame and a spilled cereal box at the entrance of the aisle
+            const e = branch.pointAt(Math.round(branch.count * 0.16), branch.w[0] / 2 + 6);
+            if (!track.isNearRoad(e.x, e.z, 3)) root.add(at(wetSign(), e.x, 0, e.z, e.yaw + 0.4));
+        }
+        if (!official) {
+            // inside the track: two long gondolas along z (only where they fit)
+            placeGondola(60, 92, Math.PI / 2, 104, ['breakfast', 'snacks']);
+            placeGondola(122, 92, Math.PI / 2, 104, ['cans', 'household']);
+        }
         // north of the track: aisles running away from the road, the freezer wall behind them
         const northZ0 = b.maxZ + 36;
         const northLen = room.maxZ - 70 - northZ0;
@@ -329,19 +405,19 @@ export default {
             placeGondola(room.minX + 17, z, Math.PI / 2, 96, ['drinks'], { sides: [1], header: false, caps: false });
         }
 
-        // ---- the fruit & vegetable island in the west loop
-        buildFruitStand(root, batch, rng, placeRect, track);
+        // ---- the fruit & vegetable island (official track: west of the west straight; otherwise somewhere in the west)
+        buildFruitStand(root, batch, rng, placeRect, official ? [[-207, 40]] : [[b.minX - 52, b.cz], [b.minX + 60, 82]]);
 
-        // ---- freezer chests between the start straight and the middle bend (glowing lids)
+        // ---- freezer chests (glowing lids): official track between the start straight and the pallet road's bend
         const lights = [];
         const freezerSpots = [];
-        for (const [x, z] of [[-80, 36], [-24, 38]]) {
+        for (const [x, z] of official ? [[112, -40], [168, -40]] : [[-80, 36], [-24, 38]]) {
             const f = freezerChest(52, lidMaterial);
             if (placeRect(f, x, z, 0.04, 54, 36, { reach: 24 })) freezerSpots.push(f.position.clone());
         }
-        // a third freezer and a can pyramid outside the east loop
-        placeRect(freezerChest(64, lidMaterial), 236, 50, Math.PI / 2, 66, 36);
-        canPyramid(root, batch, kinds, put, 236, 130, rng);
+        // a third freezer and a can pyramid outside the east of the track
+        placeRect(freezerChest(64, lidMaterial), official ? 252 : 236, 50, Math.PI / 2, 66, 36);
+        canPyramid(root, batch, kinds, put, official ? 262 : 236, official ? 150 : 130, rng);
         if (freezerSpots.length) {
             const c = freezerSpots.reduce((a, p) => a.add(p), new THREE.Vector3()).multiplyScalar(1 / freezerSpots.length);
             const light = lamp('#9fe8ff', night ? 2600 : 900, 120);
@@ -373,7 +449,7 @@ export default {
         let lane = 1;
         for (let x = -170; x <= 110; x += 56) {
             const c = checkout(lane, { beltMaterial, displayMaterial, numberMaterial });
-            const z = b.minZ - 62;
+            const z = b.minZ - 80;
             if (!freeRect(x, z, 0, 40, 90, 2)) continue;
             c.position.set(x, 0, z);
             root.add(c);
@@ -406,9 +482,9 @@ export default {
         put(cartRow, b.maxX + 40, b.minZ - 70, 50, 0);
         const loose = [[b.maxX + 52, 90, 0.6, S.blue], [-60, b.maxZ + 16, 2.4, S.red], [b.minX - 40, -50, 1.2, S.green], [210, 230, -0.6, S.red]];
         for (const [x, z, yaw, c] of loose) put(shoppingCart(c), x, z, 36, yaw);
-        // a cart inside the east loop between the gondolas, full of shopping
+        // a cart full of shopping inside the track
         const full = shoppingCart(S.blue);
-        const placed = put(full, 92, 60, 30, Math.PI / 2 + 0.25);
+        const placed = official ? put(full, -95, -8, 30, Math.PI / 2 + 0.25) : put(full, 92, 60, 30, Math.PI / 2 + 0.25);
         if (placed) {
             full.updateMatrixWorld(true);
             for (let k = 0; k < 12; k++) {
@@ -465,8 +541,11 @@ export default {
         };
         const overRoad = [0.04, 0.27, 0.5, 0.74];
         overRoad.forEach((f, k) => {
-            const p = track.pointAt(Math.floor(f * track.count));
-            hangAt(p.x, p.z, k, 48 + (k % 2) * 8, true);
+            // (not over a looping: the frame stands there; high enough over raised roads)
+            let i = Math.floor(f * track.count);
+            while (track.rail[track.wrap(i)]) i += 10;
+            const p = track.pointAt(i);
+            hangAt(p.x, p.z, k, p.y + 48 + (k % 2) * 8, true);
         });
         for (let k = 0; k < Math.round(6 * q); k++) {
             const x = rng.range(b.minX - 40, b.maxX + 40);
@@ -494,15 +573,7 @@ export default {
                 const k = r.int(0, 2);
                 if (k === 0) return group(at(box(36, 1, 28, S.cardboard), 0, 0.5, 0), at(box(20, 1, 16, S.cardboard), 6, 1.4, 4, 0.4));
                 if (k === 1) return group(cyl(9, 8, 16, S.yellow, 12), at(cyl(1, 1, 60, S.wood, 6), 4, 30, 0).rotateZ(0.25), at(box(14, 8, 6, S.ink), 9, 4, 0));
-                // the yellow A-frame "Vorsicht, nass!" sign
-                const wet = group();
-                for (const s of [-1, 1]) {
-                    const panel = group(at(roundBox(13, 24, 0.8, 0.3, S.yellow), 0, 12, 0), at(box(2.4, 8, 0.4, S.ink), 0, 14, s * 0.5), at(box(2.4, 2.4, 0.4, S.ink), 0, 7.5, s * 0.5));
-                    panel.position.z = s * 3.4;
-                    panel.rotation.x = -s * 0.27;
-                    wet.add(panel);
-                }
-                return wet;
+                return wetSign();
             },
         });
 
@@ -546,6 +617,90 @@ export default {
         };
     },
 };
+
+// ------------------------------------------------------------------ small pieces
+
+/** The yellow A-frame "Vorsicht, nass!" sign. */
+function wetSign() {
+    const wet = group();
+    for (const s of [-1, 1]) {
+        const panel = group(at(roundBox(13, 24, 0.8, 0.3, S.yellow), 0, 12, 0), at(box(2.4, 8, 0.4, S.ink), 0, 14, s * 0.5), at(box(2.4, 2.4, 0.4, S.ink), 0, 7.5, s * 0.5));
+        panel.position.z = s * 3.4;
+        panel.rotation.x = -s * 0.27;
+        wet.add(panel);
+    }
+    return wet;
+}
+
+// ------------------------------------------------------------------ the raised roads stand on pallets of cartons
+
+/**
+ * Along every raised stretch (any path, any layout): on both sides under the shoulder a row of pallets with shrink-wrapped cartons up to the
+ * road; where another road passes below (a bridge) the stacks give way to steel posts beside the lower road. Instanced through the batch.
+ */
+function buildDeckStacks(track, batch) {
+    const unit = new THREE.BoxGeometry(1, 1, 1);
+    unit.translate(0, 0.5, 0);
+    batch.type('deck', unit, toon(0xffffff), { shadow: true });
+    const post = new THREE.CylinderGeometry(1.1, 1.3, 1, 10);
+    post.translate(0, 0.5, 0);
+    batch.type('deckPost', post, toon(0xffffff), { shadow: true });
+    const STEP = 12.5;
+    const LEN = 12;
+    const DEPTH = 10;
+    const cartons = ['#ffffff', '#f6ecd8', '#ecdcc0'];
+    for (const path of track.paths) {
+        const n = path.count;
+        const last = path.closed ? n : n - 1;
+        for (let i = 0; i < last; i += Math.round(STEP)) {
+            if (path.rail[i]) continue;
+            // the lowest road height along the stack (it must stay under the shoulder on ramps)
+            let y = Infinity;
+            for (let k = -6; k <= 6; k++) {
+                const j = path.wrap(i + k);
+                if (path.rail[j]) y = -1;
+                else y = Math.min(y, path.y[j]);
+            }
+            if (y < 2.2) continue;
+            const { nx, nz } = path.normalAt(i);
+            const yaw = Math.atan2(-path.tz[i], path.tx[i]);
+            for (const side of [1, -1]) {
+                const lateral = side * (path.w[i] / 2 + 3.9 + DEPTH / 2);
+                const x = path.x[i] + nx * lateral;
+                const z = path.z[i] + nz * lateral;
+                // another road (lower, crossing or joining) near this stack: no stack; a post under the shoulder when it is free of the other road
+                // (far enough that the stacks of two roads side by side never meet)
+                const other = track.roadsNear(x, z, DEPTH / 2 + 3.9 + DEPTH + 0.5, (h, p, j) => {
+                    if (p !== path) return true;
+                    const d = Math.abs(i - j);
+                    return Math.min(d, path.closed ? n - d : d) > 30;
+                });
+                if (other) {
+                    const px = path.x[i] + nx * side * (path.w[i] / 2 + 2.8);
+                    const pz = path.z[i] + nz * side * (path.w[i] / 2 + 2.8);
+                    const below = track.roadsNear(px, pz, 2.5, h => h < path.y[i] - 3);
+                    if (!below && path.y[i] > 6) batch.add('deckPost', null, px, 0, pz, 0, S.steel, 1, path.y[i] - 0.6, 1);
+                    continue;
+                }
+                // the pallet: runners and a top of boards
+                for (const v of [-0.38, 0, 0.38]) batch.add('deck', null, x + nx * side * v * DEPTH, 0, z + nz * side * v * DEPTH, yaw, S.wood, LEN, 3.6, 1.6);
+                batch.add('deck', null, x, 3.6, z, yaw, S.woodLight, LEN, 1.2, DEPTH);
+                // cartons up to just under the shoulder (one or two layers)
+                const top = y - 0.15;
+                const base = 4.8;
+                if (top - base < 2) continue;
+                const layers = top - base > 11 ? 2 : 1;
+                const h = (top - base) / layers;
+                for (let l = 0; l < layers; l++) {
+                    const shift = (l % 2 ? 0.4 : -0.4);
+                    batch.add('crate', null, x + path.tx[i] * shift, base + l * h, z + path.tz[i] * shift, yaw + (l % 2 ? Math.PI : 0), cartons[(i + l) % 3], (LEN - 0.6) / 30, h / 18, (DEPTH - 0.6) / 22);
+                }
+                // the shrink wrap's band and the tape: a dark strip across the stack
+                batch.add('deck', null, x, base + (top - base) * 0.55, z, yaw, '#e9edf2', LEN - 0.2, 1, DEPTH + 0.2);
+            }
+        }
+    }
+}
 
 // ------------------------------------------------------------------ the room
 
@@ -604,7 +759,7 @@ function buildRoom(root, room, time) {
 
 // ------------------------------------------------------------------ the fruit & vegetable island
 
-function buildFruitStand(root, batch, rng, placeRect, track) {
+function buildFruitStand(root, batch, rng, placeRect, wanted) {
     const fruitGeometry = new THREE.SphereGeometry(1, 8, 6);
     const plain = toon(0xffffff);
     batch.type('fruit', fruitGeometry, plain, { shadow: false });
@@ -665,13 +820,8 @@ function buildFruitStand(root, batch, rng, placeRect, track) {
     sign.position.set(0, 112, 0);
     stand.add(sign);
 
-    // place it in the west loop (long axis along z)
-    const b = track.bounds;
-    const placed = placeRect(stand, b.minX + 60, 82, 0, 54, 114, { margin: 0, reach: 40 });
-    if (!placed) {
-        console.warn('fruit stand: no place');
-        return;
-    }
+    // place it (long axis along z) at the nearest free place around the wanted one
+    if (!wanted.some(([x, z]) => placeRect(stand, x, z, 0, 54, 114, { margin: 0, reach: 40 }))) return;
     // a chalkboard and loose melons / crates beside it
     stand.updateMatrixWorld(true);
     const chalkMat = toon(0xffffff, { map: chalkTexture([['HEUTE', 54, '#f7f3ea'], ['ÄPFEL', 60, '#ff7a6a'], ['NUR', 40, '#f7f3ea'], ['0,99', 70, '#f6c638']]) });

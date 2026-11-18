@@ -2,8 +2,16 @@
 @model TurboToys.Pages.Admin.Tracks.EditModel
 @{
     ViewData["Title"] = Model.IsNew ? "Neue Strecke" : Model.Name;
+    if (Model.HasDesign)
+    {
+        ViewData["PageSub"] = Model.OwnerId is null ? "Eigene Strecke · für alle freigegeben" : $"Eigene Strecke von {Model.OwnerName ?? "?"}";
+    }
     ViewData["Crumbs"] = new List<(string, string?)> { ("Administration", "/Admin"), ("TurboToys", "/Admin/TurboToys"), ("Strecken", "/Admin/TurboToys/Tracks"), (Model.IsNew ? "Neu" : Model.Name, null) };
     ViewData["Width"] = "narrow";
+    var time = Model.TimeOfDay.ToString().ToLowerInvariant();
+    var preview = Model.HasDesign
+        ? $"/turbotoys/dev/world.html?track={Model.Id}&time={time}&view=chase&speed=38"
+        : $"/turbotoys/dev/world.html?layout={Model.Layout}&time={time}&view=chase&speed=38";
 }
 <partial name="_Assets" />
 
@@ -12,9 +20,19 @@
     <div class="mat-card">
         <div class="mat-card__head"><h2 class="mat-card__title">Strecke</h2></div>
         <div class="mat-card__body mat-form">
+            @if (Model.HasDesign)
+            {
+                <dl class="mat-kv">
+                    <dt>Von</dt><dd>@if (Model.OwnerId is { } owner) { <a href="/Admin/TurboToys/Players/Edit?id=@owner">@(Model.OwnerName ?? "?")</a> } else { <span>offiziell</span> }</dd>
+                    <dt>Form</dt><dd>Eigene Strecke · Welt: @ContentLogic.LayoutName(Model.Layout)</dd>
+                </dl>
+            }
             <md-field name="Name" label="Name" required value="@Model.Name" maxlength="60" />
             <md-field name="Description" kind="textarea" label="Beschreibung" value="@Model.Description" maxlength="400" rows="2" optional="true" />
-            <md-field name="Layout" kind="select" label="Welt" value="@Model.Layout" options="Model.Layouts" hint="Die Form der Strecke und die Welt drumherum." />
+            @if (!Model.HasDesign)
+            {
+                <md-field name="Layout" kind="select" label="Welt" value="@Model.Layout" options="Model.Layouts" hint="Die Form der Strecke und die Welt drumherum." />
+            }
             <md-field name="TimeOfDay" kind="radios" label="Tageszeit" value="@Model.TimeOfDay.ToString()" options="Model.Times" />
         </div>
     </div>
@@ -32,7 +50,12 @@
     @if (!Model.IsNew)
     {
         <div class="mat-actions">
-            <a class="mat-btn mat-btn--secondary" href="/turbotoys/dev/world.html?layout=@Model.Layout&time=@Model.TimeOfDay.ToString().ToLowerInvariant()&view=chase&speed=38" target="_blank" rel="noopener">@Ui.Icon("eye")<span>Vorschau</span></a>
+            <a class="mat-btn mat-btn--secondary" href="@preview" target="_blank" rel="noopener">@Ui.Icon("eye")<span>Vorschau</span></a>
+            @if (Model.OwnerId is not null)
+            {
+                <button type="submit" class="mat-btn mat-btn--secondary" formaction="?handler=Publish&id=@Model.Id" formnovalidate
+                        data-confirm="@($"„{Model.Name}“ für alle freigeben? Dann fahren alle Spieler darauf, Pokale können sie nutzen, und {Model.OwnerName ?? "der Erbauer"} kann sie nicht mehr ändern.")">@Ui.Icon("users")<span>Für alle freigeben</span></button>
+            }
         </div>
     }
 

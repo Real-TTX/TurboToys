@@ -17,14 +17,16 @@
     {
         <md-table caption="Strecken">
             <thead>
-                <tr><th scope="col" class="mat-num mat-hide-sm">#</th><th scope="col">Strecke</th><th scope="col">Welt</th><th scope="col">Tageszeit</th><th scope="col" class="mat-num">Runden</th><th scope="col" class="mat-num">Level</th><th scope="col">Status</th><th scope="col"><span class="mat-sr-only">Aktionen</span></th></tr>
+                <tr><th scope="col" class="mat-num mat-hide-sm">#</th><th scope="col">Strecke</th><th scope="col">Von</th><th scope="col">Welt</th><th scope="col">Tageszeit</th><th scope="col" class="mat-num">Runden</th><th scope="col" class="mat-num">Level</th><th scope="col">Status</th><th scope="col"><span class="mat-sr-only">Aktionen</span></th></tr>
             </thead>
             <tbody>
-                @foreach (var t in Model.Items)
+                @foreach (var row in Model.Items)
                 {
+                    var t = row.Track;
                     <tr>
                         <td data-label="#" class="mat-num mat-mono mat-hide-sm">@t.SortOrder</td>
                         <td data-label="Strecke"><a href="/Admin/TurboToys/Tracks/Edit?id=@t.Id">@t.Name</a></td>
+                        <td data-label="Von">@if (t.OwnerId is { } owner) { <a href="/Admin/TurboToys/Players/Edit?id=@owner">@(row.OwnerName ?? "?")</a> } else { <span class="mat-muted">offiziell</span> }</td>
                         <td data-label="Welt">@ContentLogic.LayoutName(t.Layout)</td>
                         <td data-label="Tageszeit">@ContentLogic.TimeName(t.TimeOfDay)</td>
                         <td data-label="Runden" class="mat-num mat-mono">@t.Laps</td>

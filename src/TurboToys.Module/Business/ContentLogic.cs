@@ -22,22 +22,31 @@ public static class ContentLogic
     public static async Task<CatalogView> CatalogAsync(AppDbContext db) =>
         Views.Catalog(await db.Cars.AsNoTracking().ToListAsync(), await db.Weapons.AsNoTracking().ToListAsync());
 
+    /// <summary>The tracks of the actor's menu: the open official tracks, then the actor's own tracks (track editor).</summary>
     public static async Task<IReadOnlyList<TrackView>> TracksAsync(AppDbContext db, Actor actor)
     {
         Guard.Player(actor);
         var level = await LevelAsync(db, actor);
-        var tracks = await db.Tracks.AsNoTracking().Where(t => t.IsEnabled && t.UpdateState != UpdateState.Deleted).OrderBy(t => t.SortOrder).ThenBy(t => t.Id).ToListAsync();
-        return tracks.Where(t => Layouts.Exists(t.Layout)).Select(t => Views.Track(t, actor.IsAdmin ? int.MaxValue : level)).ToList();
+        var tracks = await db.Tracks.AsNoTracking()
+            .Where(t => t.IsEnabled && t.UpdateState != UpdateState.Deleted && (t.OwnerId == null || t.OwnerId == actor.PlayerId))
+            .OrderBy(t => t.OwnerId != null).ThenBy(t => t.SortOrder).ThenBy(t => t.Id)
+            .ToListAsync();
+        return tracks.Where(t => DesignRules.CanRace(t, actor)).Select(t => Views.Track(t, actor.IsAdmin ? int.MaxValue : level)).ToList();
     }
 
-    /// <summary>A track a player may race on (enabled, level reached), or a readable error.</summary>
+    /// <summary>
+    /// A track a player may race on, or a readable error: an open official track whose level the player reached, the player's own tracks (and for administrators
+    /// every player's track). Without an id the first official track of the player's level.
+    /// </summary>
     public static async Task<Track> PlayableTrackAsync(AppDbContext db, Actor actor, long? trackId)
     {
         Guard.Player(actor);
         var level = actor.IsAdmin ? int.MaxValue : await LevelAsync(db, actor);
-        var tracks = await db.Tracks.AsNoTracking().Where(t => t.IsEnabled && t.UpdateState != UpdateState.Deleted).OrderBy(t => t.SortOrder).ToListAsync();
-        var track = trackId is > 0 ? tracks.FirstOrDefault(t => t.Id == trackId) : tracks.FirstOrDefault(t => t.UnlockLevel <= level);
-        if (track is null || !Layouts.Exists(track.Layout))
+        var open = db.Tracks.AsNoTracking().Where(t => t.IsEnabled && t.UpdateState != UpdateState.Deleted);
+        var track = trackId is > 0
+            ? await open.FirstOrDefaultAsync(t => t.Id == trackId)
+            : (await open.Where(t => t.OwnerId == null).OrderBy(t => t.SortOrder).ToListAsync()).FirstOrDefault(t => t.UnlockLevel <= level);
+        if (track is null || !DesignRules.CanRace(track, actor))
         {
             throw new BusinessException("Diese Strecke gibt es nicht.", "trackId");
         }
@@ -313,7 +322,10 @@ public static class ContentLogic
 
     // ---------------------------------------------------------------- tracks (administration)
 
-    public static async Task<PagedResult<Track>> ListTracksAsync(AppDbContext db, Actor actor, ListRequest request)
+    /// <summary>A track of the administration with the name of the player who built it (null = official).</summary>
+    public sealed record TrackRow(Track Track, string? OwnerName);
+
+    public static async Task<PagedResult<TrackRow>> ListTracksAsync(AppDbContext db, Actor actor, ListRequest request)
     {
         Guard.Admin(actor);
         var all = db.Tracks.AsNoTracking().Where(t => t.UpdateState != UpdateState.Deleted);
@@ -334,36 +346,49 @@ public static class ContentLogic
             query = query.Where(t => t.TimeOfDay == time);
         }
 
+        query = request.Filter("kind") switch
+        {
+            "official" => query.Where(t => t.OwnerId == null),
+            "player" => query.Where(t => t.OwnerId != null),
+            _ => query,
+        };
         query = request.Sort switch
         {
             "name" => query.SortBy(t => t.Name, request.Descending),
             "level" => query.SortBy(t => t.UnlockLevel, request.Descending),
             _ => query.SortBy(t => t.SortOrder, request.Descending),
         };
-        return new PagedResult<Track>(await query.Page(request).ToListAsync(), await query.CountAsync(), await all.CountAsync());
+        var page = await query.Page(request)
+            .Select(t => new { Track = t, OwnerName = db.Players.Where(p => p.Id == t.OwnerId).Select(p => p.DisplayName).FirstOrDefault() })
+            .ToListAsync();
+        return new PagedResult<TrackRow>(page.Select(r => new TrackRow(r.Track, r.OwnerName)).ToList(), await query.CountAsync(), await all.CountAsync());
     }
 
-    public static async Task<Track?> GetTrackAsync(AppDbContext db, Actor actor, long id)
+    public static async Task<TrackRow?> GetTrackAsync(AppDbContext db, Actor actor, long id)
     {
         Guard.Admin(actor);
-        return await db.Tracks.AsNoTracking().FirstOrDefaultAsync(t => t.Id == id && t.UpdateState != UpdateState.Deleted);
+        var track = await db.Tracks.AsNoTracking().FirstOrDefaultAsync(t => t.Id == id && t.UpdateState != UpdateState.Deleted);
+        if (track is null)
+        {
+            return null;
+        }
+
+        var owner = track.OwnerId is null ? null : await db.Players.Where(p => p.Id == track.OwnerId).Select(p => p.DisplayName).FirstOrDefaultAsync();
+        return new TrackRow(track, owner);
     }
 
+    /// <summary>The official tracks (the choice of the cups: players' tracks never count for cups).</summary>
     public static async Task<IReadOnlyList<Track>> AllTracksAsync(AppDbContext db, Actor actor)
     {
         Guard.Admin(actor);
-        return await db.Tracks.AsNoTracking().Where(t => t.UpdateState != UpdateState.Deleted).OrderBy(t => t.SortOrder).ToListAsync();
+        return await db.Tracks.AsNoTracking().Where(t => t.UpdateState != UpdateState.Deleted && t.OwnerId == null).OrderBy(t => t.SortOrder).ToListAsync();
     }
 
+    /// <summary>Saves a track. A designed track keeps its design and world (the track editor changes them); a new track is always a layout of data/layouts.json.</summary>
     public static async Task<long> SaveTrackAsync(AppDbContext db, Actor actor, TrackInput input)
     {
         Guard.Admin(actor);
         Require(input.Name, "Name", "Bitte einen Namen eingeben.");
-        if (!Layouts.Exists(input.Layout))
-        {
-            throw new BusinessException("Diese Strecke gibt es nicht.", "Layout");
-        }
-
         if (input.Laps is < 1 or > 9)
         {
             throw new BusinessException("1 bis 9 Runden.", "Laps");
@@ -371,7 +396,16 @@ public static class ContentLogic
 
         var track = input.Id == 0 ? new Track() : await db.Tracks.FirstOrDefaultAsync(t => t.Id == input.Id && t.UpdateState != UpdateState.Deleted)
                                                   ?? throw new BusinessException("Diese Strecke gibt es nicht.");
-        track.Layout = input.Layout;
+        if (track.Design is null)
+        {
+            if (!Layouts.Exists(input.Layout))
+            {
+                throw new BusinessException("Diese Strecke gibt es nicht.", "Layout");
+            }
+
+            track.Layout = input.Layout;
+        }
+
         track.Name = input.Name.Trim();
         track.Description = (input.Description ?? string.Empty).Trim();
         track.Laps = input.Laps;
@@ -395,6 +429,21 @@ public static class ContentLogic
         var track = await db.Tracks.FirstOrDefaultAsync(t => t.Id == id) ?? throw new BusinessException("Diese Strecke gibt es nicht.");
         track.UpdateState = UpdateState.Deleted;
         track.IsEnabled = false;
+        db.ActingAs(actor.AuditId);
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>Releases a player's track for everyone: it becomes an official track (every player may race on it, cups may use it); its builder can no longer change it.</summary>
+    public static async Task PublishTrackAsync(AppDbContext db, Actor actor, long id)
+    {
+        Guard.Admin(actor);
+        var track = await db.Tracks.FirstOrDefaultAsync(t => t.Id == id && t.UpdateState != UpdateState.Deleted) ?? throw new BusinessException("Diese Strecke gibt es nicht.");
+        if (track.OwnerId is null)
+        {
+            throw new BusinessException("Diese Strecke ist schon für alle freigegeben.");
+        }
+
+        track.OwnerId = null;
         db.ActingAs(actor.AuditId);
         await db.SaveChangesAsync();
     }
@@ -444,10 +493,15 @@ public static class ContentLogic
             throw new BusinessException("Ein Pokal braucht mindestens eine Strecke.", "Track1");
         }
 
-        var known = await db.Tracks.Where(t => ids.Contains(t.Id) && t.UpdateState != UpdateState.Deleted).Select(t => t.Id).ToListAsync();
-        if (ids.Any(id => !known.Contains(id)))
+        var known = await db.Tracks.Where(t => ids.Contains(t.Id) && t.UpdateState != UpdateState.Deleted).Select(t => new { t.Id, t.OwnerId }).ToListAsync();
+        if (ids.Any(id => known.All(t => t.Id != id)))
         {
             throw new BusinessException("Eine der Strecken gibt es nicht.", "Track1");
+        }
+
+        if (known.Any(t => t.OwnerId is not null))
+        {
+            throw new BusinessException("Pokale fahren nur auf offiziellen Strecken – gib die Strecke erst für alle frei.", "Track1");
         }
 
         if (input.Opponents is < 1 or > 7)

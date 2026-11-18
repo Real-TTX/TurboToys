@@ -6,7 +6,7 @@ using TurboToys.Data;
 namespace TurboToys.Web;
 
 /// <summary>
-/// The JSON interface of the player app under <c>/turbotoys/api</c>: session, home, catalogue, garage, tracks, cups, profile, leaderboard.
+/// The JSON interface of the player app under <c>/turbotoys/api</c>: session, home, catalogue, garage, tracks, the track editor (designs), cups, profile, leaderboard.
 /// Accounts (sign-in, registration, guests) are MatGame's host API (<c>/api/matgame/...</c>). Every call goes through the business layer (which checks
 /// the permission); <see cref="GameApi.ForGame"/> checks the app version and the antiforgery token of cookie requests. Errors: 400 <c>{ error, field }</c>,
 /// 401 not signed in, 403 denied. The offline game of the app (TurboToys.Local) answers the same calls with the same shapes (docs/PROTOCOL.md).
@@ -84,6 +84,19 @@ public static class Api
             var tracks = await ContentLogic.TracksAsync(db, me);
             return Results.Ok(tracks.Select(t => new { track = t, bestLapMs = best.TryGetValue(t.Id, out var ms) ? ms : (int?)null }));
         });
+        api.MapGet("/tracks/{id:long}/design", async (long id, HttpContext http, AppDbContext db) =>
+            Results.Ok(await DesignLogic.DesignAsync(db, await Players.RequireAsync(http, db), id)));
+
+        // ---- the track editor: the player's own tracks
+        api.MapGet("/designs", async (HttpContext http, AppDbContext db) => Results.Ok(await DesignLogic.ListAsync(db, await Players.RequireAsync(http, db))));
+        api.MapPost("/designs", async (DesignInput body, HttpContext http, AppDbContext db) =>
+            Results.Ok(await DesignLogic.SaveAsync(db, await Players.RequireAsync(http, db), body)));
+        api.MapDelete("/designs/{id:long}", async (long id, HttpContext http, AppDbContext db) =>
+        {
+            await DesignLogic.DeleteAsync(db, await Players.RequireAsync(http, db), id);
+            return Results.Ok(new { ok = true });
+        });
+
         api.MapGet("/cups", async (HttpContext http, AppDbContext db) => Results.Ok(await CupLogic.CupsAsync(db, await Players.RequireAsync(http, db))));
         api.MapPost("/cups/{id:long}/enter", async (long id, HttpContext http, AppDbContext db) =>
             Results.Ok(await CupLogic.EnterAsync(db, await Players.RequireAsync(http, db), id)));

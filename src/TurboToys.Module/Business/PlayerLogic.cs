@@ -174,7 +174,7 @@ public static class PlayerLogic
         await db.SaveChangesAsync();
     }
 
-    /// <summary>Removes a player from TurboToys (soft): garage and runs go, the account in MatGame stays. A new visit starts from scratch only if an admin restores it.</summary>
+    /// <summary>Removes a player from TurboToys (soft): garage, runs and own tracks go, the account in MatGame stays. A new visit starts from scratch only if an admin restores it.</summary>
     public static async Task DeleteAsync(AppDbContext db, Actor actor, long id)
     {
         Guard.Admin(actor);
@@ -182,6 +182,12 @@ public static class PlayerLogic
         player.UpdateState = UpdateState.Deleted;
         db.GarageCars.RemoveRange(db.GarageCars.Where(g => g.PlayerId == id));
         db.CupRuns.RemoveRange(db.CupRuns.Where(r => r.PlayerId == id));
+        foreach (var track in await db.Tracks.Where(t => t.OwnerId == id && t.UpdateState != UpdateState.Deleted).ToListAsync())
+        {
+            track.UpdateState = UpdateState.Deleted;
+            track.IsEnabled = false;
+        }
+
         db.ActingAs(actor.AuditId);
         await db.SaveChangesAsync();
     }

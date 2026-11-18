@@ -2,7 +2,8 @@
 <html lang="de">
 <head>
     <meta charset="utf-8" />
-    <!-- preview of a world (also linked from the admin): dev/world.html?layout=kidsroom&time=day&view=top|chase|orbit&quality=high&at=0.1&speed=0 (speed > 0: a ride along the track) -->
+    <!-- preview of a world (also linked from the admin): dev/world.html?layout=kidsroom&time=day&view=top|chase|orbit&quality=high&at=0.1&speed=0 (speed > 0: a ride along the track);
+         ?track=<id> instead of layout shows a custom track (its design from api/tracks/{id}/design) -->
     <base href="/turbotoys/" />
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <title>TurboToys · Welt-Vorschau</title>
@@ -23,7 +24,10 @@
     import { ComicPipeline } from './js/game/render/postfx.js';
 
     const q = new URLSearchParams(location.search);
-    const layout = q.get('layout') ?? 'kidsroom';
+    // a custom track (admin preview: ?track=<id>) comes as a design from the API, an official one is a key of data/layouts.json
+    const trackId = q.get('track');
+    const json = q.get('json'); // a layout file (editor experiments)
+    const layout = json ? await fetch(json).then(r => r.json()) : trackId ? await fetch(`api/tracks/${encodeURIComponent(trackId)}/design`, { credentials: 'include' }).then(r => (r.ok ? r.json() : 'kidsroom')) : q.get('layout') ?? 'kidsroom';
     const view = q.get('view') ?? 'chase';
     const quality = q.get('quality') ?? 'high';
     const at = parseFloat(q.get('at') ?? '0.02');
@@ -90,7 +94,7 @@
         frames++;
         const now = performance.now();
         if (now - last > 1000) {
-            document.getElementById('info').textContent = `${layout} · ${track.length.toFixed(0)} u · ${track.count} samples · build ${built.toFixed(0)} ms · ${frames} fps · calls ${renderer.info.render.calls} · tris ${(renderer.info.render.triangles / 1000).toFixed(0)}k`;
+            document.getElementById('info').textContent = `${track.key} · ${track.length.toFixed(0)} u · ${track.count} samples · build ${built.toFixed(0)} ms · ${frames} fps · calls ${renderer.info.render.calls} · tris ${(renderer.info.render.triangles / 1000).toFixed(0)}k`;
             frames = 0;
             last = now;
         }

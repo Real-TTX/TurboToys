@@ -16,7 +16,11 @@ public sealed class RulesTests
             var info = Layouts.Find(key)!;
             Assert.InRange(info.Length, 400, 2000);
             Assert.True(info.PickupSlots >= 6);
+            Assert.True(info.Shortest <= info.Length);
         }
+
+        // the worlds of the players' tracks are official layouts (thumbnails, filters and history use the key)
+        Assert.All(Layouts.Themes, theme => Assert.True(Layouts.Exists(theme), theme));
     }
 
     [Fact]

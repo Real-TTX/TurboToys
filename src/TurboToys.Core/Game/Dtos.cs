@@ -1,3 +1,4 @@
+using System.Text.Json;
 using TurboToys.Business;
 
 namespace TurboToys.Game;
@@ -26,8 +27,11 @@ public sealed record AvatarView(string Face, string Hair, string Helmet, string 
 /// <summary>Who sits down in a room.</summary>
 public sealed record SeatPlayer(long PlayerId, string Name, bool IsGuest, int Level, AvatarView Avatar);
 
-/// <summary>The track of a room.</summary>
-public sealed record TrackRef(long Id, string Layout, string Name, string TimeOfDay, int Laps);
+/// <summary>
+/// The track of a room. <see cref="Design"/> is the layout JSON of a designed track (null for a layout of data/layouts.json), so every browser in the room builds
+/// the same track; <see cref="Layout"/> is then the key of its world.
+/// </summary>
+public sealed record TrackRef(long Id, string Layout, string Name, string TimeOfDay, int Laps, JsonElement? Design = null);
 
 /// <summary>What the host may change in the lobby.</summary>
 public sealed record RoomSettings(string? Name, long TrackId, int Laps, int MaxPlayers, int Bots, int BotSkill, bool Weapons, bool IsPublic);

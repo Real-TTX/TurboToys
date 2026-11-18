@@ -143,6 +143,7 @@ export class Effects {
             blue: new THREE.Color(0x58c8ff),
             green: new THREE.Color(0x8bd94a),
             oil: new THREE.Color(0x1b1a22),
+            water: new THREE.Color(0x9fdcff),
         };
         // debris: small toon boxes (outlined)
         const debrisGeometry = new THREE.BoxGeometry(0.45, 0.3, 0.6);

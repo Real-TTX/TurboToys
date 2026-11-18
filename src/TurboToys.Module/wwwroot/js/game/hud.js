@@ -69,24 +69,36 @@ export class Hud {
         const canvas = document.createElement('canvas');
         canvas.width = canvas.height = size;
         const ctx = canvas.getContext('2d');
-        const path = () => {
+        // every path: the main road (closed) and the shortcuts (open); loopings are left out (they go round on the spot)
+        const path = p => {
             ctx.beginPath();
-            for (let i = 0; i <= t.count; i += 3) {
-                const [x, y] = this.mapTransform(t.x[i % t.count], t.z[i % t.count]);
-                if (i === 0) ctx.moveTo(x, y);
+            let first = true;
+            const end = p.closed ? p.count : p.count - 1;
+            for (let i = 0; i <= end; i += i + 3 > end && i < end ? end - i : 3) {
+                const k = i % p.count;
+                if (p.rail[k]) continue;
+                const [x, y] = this.mapTransform(p.x[k], p.z[k]);
+                if (first) ctx.moveTo(x, y);
                 else ctx.lineTo(x, y);
+                first = false;
             }
-            ctx.closePath();
+            if (p.closed) ctx.closePath();
         };
+        const paths = t.paths ?? [t];
         ctx.lineJoin = 'round';
-        path();
-        ctx.strokeStyle = '#14100c';
-        ctx.lineWidth = 12;
-        ctx.stroke();
-        path();
-        ctx.strokeStyle = '#f4ead2';
-        ctx.lineWidth = 6;
-        ctx.stroke();
+        ctx.lineCap = 'round';
+        for (const p of paths) {
+            path(p);
+            ctx.strokeStyle = '#14100c';
+            ctx.lineWidth = 12;
+            ctx.stroke();
+        }
+        for (const p of paths) {
+            path(p);
+            ctx.strokeStyle = p === t ? '#f4ead2' : '#f6c638';
+            ctx.lineWidth = 6;
+            ctx.stroke();
+        }
         const [sx, sy] = this.mapTransform(t.x[0], t.z[0]);
         ctx.fillStyle = '#e2392f';
         ctx.fillRect(sx - 4, sy - 4, 8, 8);

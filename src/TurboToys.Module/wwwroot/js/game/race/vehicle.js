@@ -130,7 +130,15 @@ export class Vehicle {
             s.yaw = a.yaw + dy * k;
         }
         const last = b ?? a;
-        s.pitch = last.pitch;
+        if (b) {
+            // the pitch goes all the way round in a looping: interpolate the angle
+            let dp = b.pitch - a.pitch;
+            while (dp > Math.PI) dp -= Math.PI * 2;
+            while (dp < -Math.PI) dp += Math.PI * 2;
+            s.pitch = a.pitch + dp * Math.min(1, Math.max(0, (t - a.t) / Math.max(1, b.t - a.t)));
+        } else {
+            s.pitch = last.pitch;
+        }
         s.roll = last.roll;
         s.vx = last.vx;
         s.vy = last.vy;
@@ -173,7 +181,9 @@ export class Vehicle {
         const s = this.state;
         const m = this.model;
         this.group.position.set(s.x, s.y, s.z);
-        this.group.rotation.set(0, s.yaw, 0);
+        // the whole car pitches (slopes, loopings: yaw first, then the pitch around the car's own axis)
+        this.group.rotation.order = 'YXZ';
+        this.group.rotation.set(this.wrecked ? 0 : s.pitch, s.yaw, 0);
         const flags = s.flags | 0;
         const air = (flags & FLAG.air) !== 0;
 
@@ -182,7 +192,7 @@ export class Vehicle {
         this.suspensionVel += ((target - this.suspension) * 160 - this.suspensionVel * 12) * dt;
         this.suspension += this.suspensionVel * dt;
         m.body.position.y = this.suspension + (this.wrecked ? -0.15 : 0);
-        m.body.rotation.x = this.wrecked ? m.body.rotation.x : s.pitch;
+        m.body.rotation.x = this.wrecked ? m.body.rotation.x : 0;
         m.body.rotation.z = this.wrecked ? m.body.rotation.z : s.roll;
 
         // wheels

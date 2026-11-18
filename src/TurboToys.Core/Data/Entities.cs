@@ -206,11 +206,20 @@ public sealed class Weapon : SoftDeleteEntity
     public bool IsEnabled { get; set; } = true;
 }
 
-/// <summary>A track: a layout of data/layouts.json (the shape and the world) with a name, laps and a time of day.</summary>
+/// <summary>
+/// A track: a layout of data/layouts.json (the shape and the world) with a name, laps and a time of day – or a player's own track, built in the track editor
+/// (<see cref="Design"/>). A player's track belongs to its owner until an administrator releases it for everyone (<see cref="OwnerId"/> = null).
+/// </summary>
 public sealed class Track : SoftDeleteEntity
 {
-    /// <summary>The key of the layout (kidsroom, garden, kitchen, workshop, supermarket, attic).</summary>
+    /// <summary>The key of the layout (kidsroom, garden, kitchen, workshop, supermarket, attic); for a designed track the key of its world.</summary>
     public string Layout { get; set; } = "kidsroom";
+
+    /// <summary>The player who built the track (null = an official track everyone may race on, also in cups).</summary>
+    public long? OwnerId { get; set; }
+
+    /// <summary>The layout JSON of the track editor (the format of data/layouts.json plus the editor's own data), null for a layout of data/layouts.json.</summary>
+    public string? Design { get; set; }
 
     public string Name { get; set; } = string.Empty;
 

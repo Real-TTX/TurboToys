@@ -7,7 +7,7 @@ namespace TurboToys.Pages.Admin.Tracks;
 
 public sealed class IndexModel(AppDbContext db) : AppPageModel(db)
 {
-    public IReadOnlyList<Track> Items { get; private set; } = [];
+    public IReadOnlyList<ContentLogic.TrackRow> Items { get; private set; } = [];
 
     public ToolbarModel Toolbar { get; private set; } = null!;
 
@@ -15,7 +15,7 @@ public sealed class IndexModel(AppDbContext db) : AppPageModel(db)
 
     public async Task OnGetAsync()
     {
-        var request = ReadList(["layout", "time"]);
+        var request = ReadList(["layout", "time", "kind"]);
         var result = await ContentLogic.ListTracksAsync(Db, Me, request);
         Items = result.Items;
         Toolbar = new ToolbarModel
@@ -23,6 +23,7 @@ public sealed class IndexModel(AppDbContext db) : AppPageModel(db)
             Id = "tracks", Action = "/Admin/TurboToys/Tracks", Label = "Strecken", Search = request.Search, SearchField = true, SearchPlaceholder = "Name oder Beschreibung",
             Filters =
             [
+                new FilterField("kind", "Art", [new FilterOption("official", "Offiziell"), new FilterOption("player", "Von Spielern")], request.Filter("kind")),
                 new FilterField("layout", "Welt", Layouts.List.Select(l => new FilterOption(l.Key, l.Name)).ToList(), request.Filter("layout")),
                 new FilterField("time", "Tageszeit", Enum.GetValues<TimeOfDay>().Select(t => new FilterOption(t.ToString(), ContentLogic.TimeName(t))).ToList(), request.Filter("time")),
             ],

@@ -20,7 +20,7 @@ class NoHud {
 
 /** A bots-only race as the menu's background. */
 export class DemoRace extends Race {
-    constructor({ layout, timeOfDay = 'day', cars = 5 }) {
+    constructor({ layout, timeOfDay = 'day', cars = 5, design = null }) {
         const seats = [];
         const pool = SeedCars;
         for (let k = 0; k < cars; k++) {
@@ -32,7 +32,7 @@ export class DemoRace extends Race {
         }
         super({
             start: {
-                token: 'demo', kind: 'Quick', track: { id: 0, layout, name: '', timeOfDay, laps: 99 }, laps: 99, weapons: true, countdownMs: 0, seed: Math.floor(Math.random() * 1e6),
+                token: 'demo', kind: 'Quick', track: { id: 0, layout, design, name: '', timeOfDay, laps: 99 }, laps: 99, weapons: true, countdownMs: 0, seed: Math.floor(Math.random() * 1e6),
                 botDriver: -1, pickupSlots: 0, weaponRules: DEMO_WEAPONS, seats,
             },
             me: -1, onResults() {}, onSaved() {}, onPause() {}, onClosed() {},
@@ -119,11 +119,11 @@ export class DemoRace extends Race {
             pos = new THREE.Vector3(s.x - fx * 18, s.y + 14, s.z - fz * 18);
             look = new THREE.Vector3(s.x + fx * 10, s.y, s.z + fz * 10);
         }
-        const p = this.track.locate(pos.x, pos.z, -1);
+        const p = this.track.locateAny(pos.x, pos.z, s.y, this.cameraLocation ??= {});
         // stay above the road between the barriers (props beside it would fill the picture)
         const limit = p.half + 1.2;
         if (Math.abs(p.lateral) > limit) {
-            const { nx, nz } = this.track.normalAt(p.index);
+            const { nx, nz } = p.path.normalAt(p.index);
             const over = Math.abs(p.lateral) - limit;
             pos.x -= nx * Math.sign(p.lateral) * over;
             pos.z -= nz * Math.sign(p.lateral) * over;

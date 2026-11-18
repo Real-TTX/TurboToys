@@ -826,4 +826,39 @@ export function pencilCup() {
     return g;
 }
 
+// ------------------------------------------------------------------ set pieces of the track (bridge piers, the play mattress)
+
+/** A column of stacked wooden blocks exactly h tall (a bridge pier): cubes of size s, letters and plain, slightly twisted. */
+export function blockColumn(rng, h, s = 6) {
+    const g = new THREE.Group();
+    const count = Math.max(1, Math.round(h / s));
+    const t = h / count;
+    for (let k = 0; k < count; k++) {
+        const b = rng() < 0.45 ? letterBlock(s, rng.int(0, 15)) : woodBlock('cube', rng.pick(TOY_COLORS), s);
+        b.scale.y = t / s;
+        b.position.set((rng() - 0.5) * s * 0.12, k * t + t / 2, (rng() - 0.5) * s * 0.12);
+        b.rotation.y = (rng() - 0.5) * 0.35;
+        g.add(b);
+    }
+    return g;
+}
+
+/** A thick play mattress (gym mat) of two layers, L along x, D along z, H tall: the raised road runs over it. */
+export function playMattress(L, D, H) {
+    const g = new THREE.Group();
+    const low = H * 0.48;
+    g.add(at(roundBox(L, low, D, 2.2, C.red, 2), 0, low / 2, 0));
+    g.add(at(roundBox(L - 3, H - low, D - 3, 2.2, C.blue, 2), 0.6, low + (H - low) / 2, -0.4));
+    // piping along the edges of both layers
+    for (const [y, l, d] of [[low, L + 0.3, D + 0.3], [H - 0.6, L - 2.7, D - 2.7]]) {
+        for (const s of [-1, 1]) {
+            g.add(at(box(l, 1.1, 1.1, C.yellow), 0, y, s * d / 2));
+            g.add(at(box(1.1, 1.1, d, C.yellow), s * l / 2, y, 0));
+        }
+    }
+    // a name tag stitched onto the red layer (both long sides)
+    for (const s of [-1, 1]) g.add(at(box(L * 0.18, low * 0.4, 0.3, C.yellow), 0, low * 0.5, s * (D / 2 + 0.1)));
+    return g;
+}
+
 export { PALETTE };

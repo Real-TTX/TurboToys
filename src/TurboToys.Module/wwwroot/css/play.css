@@ -303,3 +303,24 @@ input[type=range] { accent-color: var(--red); padding: 0; border: 0; box-shadow:
     .logo-btn img { height: 46px; }
     .who-text, .server-badge { display: none; }
 }
+
+/* ---- track editor (Streckenbau) */
+.builder { display: grid; grid-template-columns: 1fr 380px; gap: 16px; height: calc(100vh - 120px); max-width: 1500px; margin: 0 auto; }
+.builder-plan { position: relative; padding: 0; overflow: hidden; }
+.builder-plan::before { display: none; }
+.builder-plan canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+.builder-plan canvas:active { cursor: grabbing; }
+.builder-status { position: absolute; left: 12px; top: 12px; display: flex; gap: 10px; align-items: center; background: var(--paper-2); border: 3px solid var(--ink); border-radius: 8px; padding: 6px 12px; box-shadow: var(--shadow-sm); }
+.builder-status em { color: var(--red); font-style: normal; }
+.builder-hint { position: absolute; left: 12px; bottom: 10px; font-size: 13px; opacity: .7; }
+.builder-side { overflow-y: auto; }
+.builder-meta select, .builder-meta input { padding: 6px 8px; border: 3px solid var(--ink); border-radius: 6px; background: #fff; }
+.builder-two { display: grid; grid-template-columns: 1fr 1fr 70px; gap: 8px; }
+.builder-palette { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 14px; }
+.piece { position: relative; display: grid; justify-items: center; gap: 2px; padding: 6px 4px 5px; background: #fff; border: 3px solid var(--ink); border-radius: 8px; box-shadow: var(--shadow-sm); cursor: pointer; font-size: 12px; line-height: 1.1; text-align: center; }
+.piece:hover { background: var(--yellow); transform: translate(-1px, -2px); }
+.piece.blocked { opacity: .4; }
+.piece kbd { position: absolute; right: 4px; top: 3px; font: 12px Bangers, Impact, sans-serif; opacity: .6; }
+.builder-preview { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); display: flex; gap: 14px; align-items: center; z-index: 20; }
+.custom-tag { position: absolute; right: 8px; top: 8px; }
+@media (max-width: 1000px) { .builder { grid-template-columns: 1fr; height: auto; } .builder-plan { height: 60vh; } }

@@ -30,6 +30,7 @@ public sealed class LocalGameTests : IAsyncLifetime
     [InlineData("GET", "/catalog")]
     [InlineData("GET", "/garage")]
     [InlineData("GET", "/tracks")]
+    [InlineData("GET", "/designs")]
     [InlineData("GET", "/cups")]
     [InlineData("GET", "/profile")]
     [InlineData("GET", "/leaderboard")]
@@ -96,6 +97,68 @@ public sealed class LocalGameTests : IAsyncLifetime
         Assert.Equal(Data.RaceKind.Cup, room.Kind);
         Assert.Equal(token, room.CupRun);
         Assert.True(room.Seats.Count > 1);
+    }
+
+    [Fact]
+    public async Task Own_tracks_are_saved_listed_changed_and_deleted()
+    {
+        var saved = await Json("POST", "/designs", new { name = "Meine Piste", theme = "garden", timeOfDay = "Dusk", laps = 2, design = LayoutTests.Square() });
+        var id = saved.GetProperty("id").GetInt64();
+        Assert.True(id >= LocalProfile.TrackIdBase);
+        Assert.Equal("garden", saved.GetProperty("theme").GetString());
+        Assert.Equal("Dusk", saved.GetProperty("timeOfDay").GetString());
+        Assert.Equal($"custom-{id}", saved.GetProperty("design").GetProperty("key").GetString());
+        Assert.Equal("Meine Piste", saved.GetProperty("design").GetProperty("name").GetString());
+
+        var list = await Json("GET", "/designs");
+        Assert.Equal(id, list[0].GetProperty("id").GetInt64());
+        var tracks = await Json("GET", "/tracks");
+        var mine = tracks.EnumerateArray().Single(t => t.GetProperty("track").GetProperty("id").GetInt64() == id).GetProperty("track");
+        Assert.True(mine.GetProperty("custom").GetBoolean());
+        Assert.Equal("garden", mine.GetProperty("layout").GetString());
+        Assert.False(tracks[0].GetProperty("track").GetProperty("custom").GetBoolean());
+        var design = await Json("GET", $"/tracks/{id}/design");
+        Assert.Equal(1, design.GetProperty("pieces").GetArrayLength());
+
+        var renamed = await Json("POST", "/designs", new { id, name = "Neuer Name", theme = "kitchen", timeOfDay = "Day", laps = 3, design = LayoutTests.Square() });
+        Assert.Equal(id, renamed.GetProperty("id").GetInt64());
+        Assert.Equal("kitchen", renamed.GetProperty("design").GetProperty("theme").GetString());
+        Assert.Single((await Json("GET", "/designs")).EnumerateArray());
+
+        var tooShort = await _game.RequestAsync("POST", "/designs", Body(new { name = "Mini", theme = "garden", timeOfDay = "Day", laps = 3, design = LayoutTests.Square(100, shortcut: false, loop: false) }),
+            CancellationToken.None);
+        Assert.Equal(400, tooShort.Status);
+        Assert.Equal("design", tooShort.Body!.Value.GetProperty("field").GetString());
+        Assert.Equal(400, (await _game.RequestAsync("GET", "/tracks/1/design", null, CancellationToken.None)).Status);
+
+        await Json("DELETE", $"/designs/{id}");
+        Assert.Empty((await Json("GET", "/designs")).EnumerateArray());
+        Assert.DoesNotContain("Neuer Name", await File.ReadAllTextAsync(Path.Combine(_folder, LocalProfile.FileName)));
+    }
+
+    [Fact]
+    public async Task A_quick_race_on_an_own_track_uses_its_design()
+    {
+        var saved = await Json("POST", "/designs", new { name = "Meine Piste", theme = "attic", timeOfDay = "Night", laps = 1, design = LayoutTests.Square() });
+        var id = saved.GetProperty("id").GetInt64();
+        await _game.InvokeAsync("QuickRace", [JsonSerializer.SerializeToElement(new { trackId = id, bots = 2, botSkill = 1, laps = 1 })], CancellationToken.None);
+        var start = (RaceStartView)_host.Sent.Last(m => m.Name == "RaceStart").Args[0]!;
+        Assert.Equal(id, start.Track.Id);
+        Assert.Equal("attic", start.Track.Layout);
+        Assert.Equal($"custom-{id}", start.Track.Design!.Value.GetProperty("key").GetString());
+        // 2 crate rows on the lap and 1 on the shortcut
+        Assert.Equal(9, start.PickupSlots);
+
+        var room = _game.Room!;
+        var go = DateTime.UtcNow.AddMilliseconds(RaceRoom.CountdownMs + 50);
+        _game.Tick(go);
+        var picked = room.Pickup(TurboToysLocal.Connection, 0, 8, go.AddSeconds(1));
+        Assert.Contains(picked, m => m.Method == "Picked");
+        var lap = room.Lap(TurboToysLocal.Connection, 0, 1, go.AddSeconds(40));
+        Assert.Contains(lap, m => m.Method == "Finished");
+        var end = _game.Tick(go.AddSeconds(41));
+        Assert.Contains(end, m => m.Method == "Saved");
+        Assert.Equal("attic", _game.Profile.History[0].Layout);
     }
 
     [Fact]

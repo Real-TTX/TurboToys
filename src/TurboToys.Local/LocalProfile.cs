@@ -5,12 +5,15 @@ using TurboToys.Data;
 namespace TurboToys.Local;
 
 /// <summary>
-/// The offline profile on the device (profile.json in the app's data folder): the local player with money, experience and avatar, the garage, the cup runs and
-/// the last races. Offline progress counts only on this device (it is never uploaded).
+/// The offline profile on the device (profile.json in the app's data folder): the local player with money, experience and avatar, the garage, the cup runs,
+/// the last races and the player's own tracks (track editor). Offline progress counts only on this device (it is never uploaded).
 /// </summary>
 public sealed class LocalProfile
 {
     public const string FileName = "profile.json";
+
+    /// <summary>The ids of the own tracks start here (the seeded tracks count from 1).</summary>
+    public const long TrackIdBase = 1_000_000;
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
@@ -24,12 +27,17 @@ public sealed class LocalProfile
 
     public Dictionary<long, int> BestLaps { get; set; } = [];
 
+    /// <summary>The own tracks of the track editor (ids from <see cref="TrackIdBase"/>).</summary>
+    public List<Track> Tracks { get; set; } = [];
+
     public long NextId { get; set; } = 1;
 
     [System.Text.Json.Serialization.JsonIgnore]
     public string? Path { get; private set; }
 
     public long NewId() => NextId++;
+
+    public long NewTrackId() => TrackIdBase + NextId++;
 
     public static LocalProfile Load(string directory, string playerName, IReadOnlyList<Car> catalog)
     {

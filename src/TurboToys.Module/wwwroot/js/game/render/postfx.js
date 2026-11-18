@@ -108,7 +108,7 @@ export class ComicPipeline {
         this.quality = quality;
         this.flash = 0;
         this.enabled = true;
-        this.normalMaterial = new THREE.MeshNormalMaterial();
+        this.normalMaterial = new THREE.MeshNormalMaterial({ side: THREE.DoubleSide }); // double-sided: the inside of pipes and walls seen from behind need depth too
         this.size = new THREE.Vector2();
         this.colorTarget = null;
         this.normalTarget = null;

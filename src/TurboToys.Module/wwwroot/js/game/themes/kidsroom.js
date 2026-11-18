@@ -8,7 +8,7 @@ import { floor, scatter, lamp } from './common.js';
 import {
     C, woodBlock, blockTower, blockGate, looseBlocks, brickPile, brickHouse, crayon, crayonBox, ball, stackingRings,
     spinningTop, drum, robot, dino, paperPlane, sock, teddy, lyingBook, standingBook, openBook, locomotive, wagon, animated, trainTrack,
-    rocketLamp, deskLamp, bed, toyChest, bookcase, desk, basket, globe, pencilCup,
+    rocketLamp, deskLamp, bed, toyChest, bookcase, desk, basket, globe, pencilCup, blockColumn, playMattress, letterBlock,
 } from './kidsroom-props.js';
 
 // ------------------------------------------------------------------ textures
@@ -437,7 +437,10 @@ export default {
         const reserve = (x, z, r) => reserved.push({ x, z, r });
         const isFree = (x, z, r = 0) => x > room.minX + 8 + r && x < room.maxX - 8 - r && z > room.minZ + 8 + r && z < room.maxZ - 8 - r
             && !reserved.some(p => Math.hypot(p.x - x, p.z - z) < p.r + r);
-        /** Places a big piece if it keeps off the road; returns whether it was placed. */
+        // loopings: the circle and the frame beside it are no road samples (isNearRoad does not see them): keep their ground free
+        const loopZones = track.loops.map(l => ({ x: l.P[0], z: l.P[2], r: l.D / 2 + track.w[l.entry] / 2 + 9 }));
+        for (const zone of loopZones) reserve(zone.x, zone.z, zone.r);
+        const nearLoop = (x, z, r) => loopZones.some(zone => Math.hypot(zone.x - x, zone.z - z) < zone.r + r);
         /**
          * Places a piece beside the road: its whole footprint (or opts.reach) keeps 4.5 off the road; when the wanted spot is too close it moves
          * to the nearest free spot nearby (unless opts.exact). Returns whether it was placed.
@@ -448,7 +451,7 @@ export default {
                 const d = k === 0 ? 0 : 2 + k * 0.8;
                 const px = x + Math.cos(k * 2.39996) * d;
                 const pz = z + Math.sin(k * 2.39996) * d;
-                if (track.isNearRoad(px, pz, 4.5 + reach)) continue;
+                if (track.isNearRoad(px, pz, 4.5 + reach) || nearLoop(px, pz, reach)) continue;
                 object.position.set(px, y, pz);
                 object.rotation.y = yaw;
                 root.add(object);
@@ -465,7 +468,9 @@ export default {
         root.add(boards);
         const rug = new THREE.Mesh(new THREE.PlaneGeometry(300, 160), toon(0xffffff, { map: canvasTexture(1024, 544, drawRug) }));
         rug.rotation.x = -Math.PI / 2;
-        rug.position.set(30, 0, 52);
+        // the official lap's big lobe lies on the rug; other tracks get it in their middle
+        if (track.key === 'kidsroom') rug.position.set(52, 0, 112);
+        else rug.position.set(b.cx, 0, b.cz);
         rug.receiveShadow = true;
         root.add(rug);
 
@@ -666,35 +671,160 @@ export default {
             }
             return stack;
         };
-        // two rows per side: the inner row carries the barrier blocks (top just under them), the outer row rises above the road like a parapet
-        for (const side of [1, -1]) {
-            for (const row of [0, 1]) {
-                let last = null;
-                for (let i = 0; i < n; i++) {
-                    const hRoad = track.y[i];
-                    if (hRoad < (row ? 1.5 : 0.5)) {
-                        last = null;
-                        continue;
+        /** True when a road lower than y passes within margin of (x, z): under bridges nothing may stand. */
+        const lowerRoadNear = (x, z, margin, y) => track.roadsNear(x, z, margin, h => h < y - 4) !== null;
+        // the play mattress: on the official layout the plateau's far corner runs over a thick gym mat (instead of book stacks)
+        const mats = [];
+        if (track.key === 'kidsroom') {
+            const corner = [];
+            for (let i = 0; i < n; i++) if (!track.rail[i] && track.y[i] > 14.2 && track.x[i] < -108 && track.x[i] > -172) corner.push(i);
+            if (corner.length > 20) {
+                const a = corner[0];
+                const z0 = corner[corner.length - 1];
+                const yaw = Math.atan2(-(track.z[z0] - track.z[a]), track.x[z0] - track.x[a]);
+                const cos = Math.cos(yaw);
+                const sin = Math.sin(yaw);
+                const mx = (track.x[a] + track.x[z0]) / 2;
+                const mz = (track.z[a] + track.z[z0]) / 2;
+                let lowest = Infinity;
+                for (const i of corner) lowest = Math.min(lowest, track.y[i]);
+                // the mat's box (local frame: u along the chord, v across) around the road and its barriers: as wide as no lower road gets buried
+                const fit = pad => {
+                    let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
+                    for (const i of corner) {
+                        for (const l of [-1, 1]) {
+                            const { nx, nz } = track.normalAt(i);
+                            const e = l * (track.w[i] / 2 + pad);
+                            const dx = track.x[i] + nx * e - mx;
+                            const dz = track.z[i] + nz * e - mz;
+                            const u = dx * cos - dz * sin;
+                            const v = dx * sin + dz * cos;
+                            minU = Math.min(minU, u); maxU = Math.max(maxU, u);
+                            minV = Math.min(minV, v); maxV = Math.max(maxV, v);
+                        }
                     }
-                    const D = row ? 18 : 15.5;
-                    const lateral = track.w[i] / 2 + 1.35 + (row ? 15.5 + 3 : 0) + D / 2;
-                    const { nx, nz } = track.normalAt(i);
-                    const x = track.x[i] + nx * side * lateral;
-                    const z = track.z[i] + nz * side * lateral;
-                    const L = rng.range(17, 24);
-                    if (last && Math.hypot(x - last.x, z - last.z) < last.L / 2 + L / 2 + 0.4) continue;
-                    if (row && track.isNearRoad(x, z, 4 + D / 2)) continue;
-                    // the inner row must stay under the lowest road (and barrier) along its whole length
-                    let low = hRoad;
-                    for (let k = -Math.ceil(L / 2) - 2; k <= Math.ceil(L / 2) + 2; k++) low = Math.min(low, track.y[(i + k + n) % n]);
-                    if (!row && low < 0.4) continue;
-                    const height = row ? hRoad + rng.range(3, 10) : low - 0.08 - GROUND;
-                    const stack = bookStack(height, L, D);
-                    stack.position.set(x, 0, z);
-                    stack.rotation.y = Math.atan2(-track.tz[i], track.tx[i]);
-                    root.add(stack);
-                    reserve(x, z, 10);
-                    last = { x, z, L };
+                    const L = maxU - minU + 4;
+                    const D = maxV - minV + 4;
+                    const cu = (minU + maxU) / 2;
+                    const cv = (minV + maxV) / 2;
+                    const box = { L, D, cx: mx + cu * cos + cv * sin, cz: mz - cu * sin + cv * cos, top: lowest };
+                    // the lowest road surface over the mat (the descent may cut a corner of it): the mat's top stays under it, buried roads fail
+                    for (const path of track.paths) {
+                        for (let i = 0; i < path.count; i++) {
+                            if (path.rail[i]) continue;
+                            const dx = path.x[i] - box.cx;
+                            const dz = path.z[i] - box.cz;
+                            const r = path.w[i] / 2;
+                            if (Math.abs(dx * cos - dz * sin) < L / 2 + r && Math.abs(dx * sin + dz * cos) < D / 2 + r) box.top = Math.min(box.top, path.heightAt(i));
+                        }
+                    }
+                    return box.top > lowest - 2.2 ? box : null;
+                };
+                const found = [13, 9, 6, 4.2].map(fit).find(f => f);
+                if (found && found.L < 150 && found.D < 120) {
+                    const { L, D, cx, cz } = found;
+                    const mat = playMattress(L, D, found.top - 0.12 - GROUND);
+                    mat.position.set(cx, 0, cz);
+                    mat.rotation.y = yaw;
+                    root.add(mat);
+                    mats.push({ cx, cz, cos, sin, L, D });
+                    reserve(cx, cz, Math.max(L, D) / 2);
+                }
+            }
+        }
+        const onMat = (x, z, pad) => mats.some(m => {
+            const dx = x - m.cx;
+            const dz = z - m.cz;
+            return Math.abs(dx * m.cos - dz * m.sin) < m.L / 2 + pad && Math.abs(dx * m.sin + dz * m.cos) < m.D / 2 + pad;
+        });
+        // two rows per side along every raised path: the inner row carries the barrier blocks (top just under them), the outer row rises above the road
+        // like a parapet; no stack where a lower road passes (bridges: block piers hold those, below) or where the mattress lies
+        for (const path of track.paths) {
+            const pn = path.count;
+            const wrap = i => path.wrap(i);
+            for (const side of [1, -1]) {
+                for (const row of [0, 1]) {
+                    let last = null;
+                    for (let i = 0; i < pn; i++) {
+                        const hRoad = path.y[i];
+                        if (path.rail[i] || hRoad < (row ? 1.5 : 0.5)) {
+                            last = null;
+                            continue;
+                        }
+                        const D = row ? 18 : 15.5;
+                        const lateral = path.w[i] / 2 + 1.35 + (row ? 15.5 + 3 : 0) + D / 2;
+                        const { nx, nz } = path.normalAt(i);
+                        const x = path.x[i] + nx * side * lateral;
+                        const z = path.z[i] + nz * side * lateral;
+                        const L = rng.range(17, 24);
+                        if (last && Math.hypot(x - last.x, z - last.z) < last.L / 2 + L / 2 + 0.4) continue;
+                        if (row && track.isNearRoad(x, z, 4 + D / 2)) continue;
+                        if (lowerRoadNear(x, z, Math.hypot(L, D) / 2 + 2, hRoad) || onMat(x, z, row ? 14 : 2)) continue;
+                        // another road at about this height beside the stack (forks, joins): no stack into it
+                        if (track.roadsNear(x, z, D / 2 - 1, (h, other) => other !== path && Math.abs(h - hRoad) < 4)) continue;
+                        // the inner row must stay under the lowest road (and barrier) along its whole length
+                        let low = hRoad;
+                        for (let k = -Math.ceil(L / 2) - 2; k <= Math.ceil(L / 2) + 2; k++) {
+                            const j = wrap(i + k);
+                            if (!path.rail[j]) low = Math.min(low, path.y[j]);
+                        }
+                        if (!row && low < 0.4) continue;
+                        const height = row ? hRoad + rng.range(3, 10) : low - 0.08 - GROUND;
+                        const stack = bookStack(height, L, D);
+                        stack.position.set(x, 0, z);
+                        stack.rotation.y = Math.atan2(-path.tz[i], path.tx[i]);
+                        root.add(stack);
+                        reserve(x, z, 10);
+                        last = { x, z, L };
+                    }
+                }
+            }
+        }
+        // bridges: where a raised road passes over another one, piers of stacked building blocks stand at its edges on both sides of the lower road
+        for (const path of track.paths) {
+            const pn = path.count;
+            const under = new Uint8Array(pn);
+            for (let i = 0; i < pn; i++) {
+                if (path.rail[i] || path.y[i] < 8) continue;
+                const { nx, nz } = path.normalAt(i);
+                for (const l of [-1, -0.5, 0, 0.5, 1]) {
+                    const e = l * (path.w[i] / 2 + 2);
+                    if (lowerRoadNear(path.x[i] + nx * e, path.z[i] + nz * e, 4, path.y[i])) under[i] = 1;
+                }
+            }
+            for (let i = 0; i < pn; i++) {
+                // the ends of every run of underpass samples
+                const prev = under[path.wrap(i - 1)];
+                const edges = [];
+                if (under[i] && !prev) edges.push(-1);
+                if (under[i] && !under[path.wrap(i + 1)]) edges.push(1);
+                for (const dir of edges) {
+                    // step away from the lower road until a pier fits on both edges
+                    for (let k = 2; k < 14; k++) {
+                        const j = path.wrap(i + dir * k);
+                        if (path.rail[j]) break;
+                        const h = path.y[j] - 0.62 - GROUND;
+                        if (h < 4) break;
+                        const { nx, nz } = path.normalAt(j);
+                        const spots = [-1, 1].map(s => {
+                            const e = s * (path.w[j] / 2 + 3.2);
+                            return [path.x[j] + nx * e, path.z[j] + nz * e];
+                        });
+                        if (spots.some(([x, z]) => lowerRoadNear(x, z, 6, path.y[j]))) continue;
+                        for (const [x, z] of spots) {
+                            const pier = blockColumn(rng, h, 6.2);
+                            pier.position.set(x, 0, z);
+                            pier.rotation.y = Math.atan2(-path.tz[j], path.tx[j]);
+                            root.add(pier);
+                            reserve(x, z, 6);
+                        }
+                        // a beam of blocks under the deck between the piers (the bridge's lintel)
+                        const lintel = roundBox(path.w[j] + 10, 2.4, 5.4, 0.4, rng.pick([C.red, C.yellow, C.blue]), 1);
+                        lintel.position.set(path.x[j], path.y[j] - 0.62 - GROUND - 1.2, path.z[j]);
+                        lintel.rotation.y = Math.atan2(-path.tz[j], path.tx[j]) + Math.PI / 2;
+                        root.add(lintel);
+                        break;
+                    }
                 }
             }
         }
@@ -731,9 +861,21 @@ export default {
         }
 
         // ---------------------------------------------------------- the wooden train on its oval (left lobe), animated
-        const train = { cx: -62, cz: 58, rx: 40, rz: 28 };
-        let trainOk = !track.isNearRoad(train.cx - train.rx, train.cz, 9) && !track.isNearRoad(train.cx + train.rx, train.cz, 9)
-            && !track.isNearRoad(train.cx, train.cz - train.rz, 9) && !track.isNearRoad(train.cx, train.cz + train.rz, 9);
+        // the oval needs a free spot: every point of the rails keeps 9 off the roads (tried from the middle of the big lobe outwards)
+        const train = { cx: 0, cz: 0, rx: 40, rz: 28 };
+        const ovalFree = (cx, cz) => isFree(cx, cz, train.rx + 6) && !nearLoop(cx, cz, train.rx + 6) && !track.isNearRoad(cx, cz, 9)
+            && Array.from({ length: 24 }, (_, k) => (k / 24) * Math.PI * 2).every(a => !track.isNearRoad(cx + Math.cos(a) * train.rx, cz + Math.sin(a) * train.rz, 9));
+        let trainOk = false;
+        for (let k = 0; k < 900 && !trainOk; k++) {
+            const d = k * 0.45;
+            const cx = (track.key === 'kidsroom' ? 40 : b.cx) + Math.cos(k * 2.39996) * d;
+            const cz = (track.key === 'kidsroom' ? 110 : b.cz) + Math.sin(k * 2.39996) * d;
+            if (ovalFree(cx, cz)) {
+                train.cx = cx;
+                train.cz = cz;
+                trainOk = true;
+            }
+        }
         if (trainOk) {
             const tt = trainTrack(train.rx, train.rz, 8);
             tt.position.set(train.cx, 0, train.cz);
@@ -794,6 +936,32 @@ export default {
         put(brickHouse(rng), -10, -84, 16, 0.4);
         put(brickHouse(rng), 210, 120, 16, -0.6);
         put(robot(C.orange), -205, 120, 12, 1.2);
+
+        // toys sit on the roofs of the box tunnels (the builder draws the box: 10.5 tall, w / 2 + 3.5 wide on each side)
+        for (const tunnel of track.tunnels) {
+            const path = tunnel.path;
+            const len = Math.min(path.closed ? tunnel.end : path.count - 1, tunnel.end) - tunnel.start;
+            if (len < 16 || !['box', 'crate', 'cereal'].includes(tunnel.style)) continue;
+            const roof = i => path.heightAt(path.wrap(i)) + 10.5 - GROUND;
+            const mid = path.wrap(tunnel.start + Math.round(len * 0.55));
+            const yaw = Math.atan2(path.tx[mid], path.tz[mid]);
+            const { nx, nz } = path.normalAt(mid);
+            if (tunnel.style === 'box' || tunnel.style === 'crate') {
+                const bear = teddy(C.furLight, C.white, C.blue);
+                bear.scale.setScalar(0.42);
+                bear.position.set(path.x[mid] + nx * 2, roof(mid), path.z[mid] + nz * 2);
+                bear.rotation.y = yaw + Math.PI / 2;
+                root.add(bear);
+            }
+            for (const [k, off] of [[0.18, -1], [0.82, 1], [0.3, 1]]) {
+                const j = path.wrap(tunnel.start + Math.round(len * k));
+                const { nx: ax, nz: az } = path.normalAt(j);
+                const block = letterBlock(5.5, rng.int(0, 15));
+                block.position.set(path.x[j] + ax * off * (path.w[j] / 2 - 1), roof(j) + 2.75, path.z[j] + az * off * (path.w[j] / 2 - 1));
+                block.rotation.y = rng() * 3;
+                root.add(block);
+            }
+        }
 
         // drawings on the floor (paper sheets)
         const drawingMaterial = toon(0xffffff, { map: canvasTexture(512, 256, drawDrawings) });

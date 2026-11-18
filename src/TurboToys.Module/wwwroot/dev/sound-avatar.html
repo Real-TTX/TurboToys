@@ -15,7 +15,10 @@
         .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
         .engines { display: flex; gap: 14px; flex-wrap: wrap; }
         .engine { border: 2px solid #14100c; border-radius: 8px; padding: 6px 10px; background: #fff; }
-        .engine label { display: grid; grid-template-columns: 60px 130px; align-items: center; font-size: 12px; }
+        .engine label { display: grid; grid-template-columns: 110px 130px 34px; align-items: center; font-size: 12px; }
+        .engine label output { font: 11px monospace; text-align: right; }
+        .group { font: 12px sans-serif; font-weight: bold; margin-right: 4px; }
+        button.on { background: #7fd1ff; }
         table.grid td { text-align: center; font-size: 11px; padding: 2px; }
         table.grid th { font-size: 11px; padding: 2px 4px; }
         #info { position: fixed; right: 8px; bottom: 8px; max-width: 520px; max-height: 40vh; overflow: auto; white-space: pre; font: 11px monospace; background: rgba(0,0,0,.75); color: #fff; padding: 6px 8px; border-radius: 6px; }
@@ -33,7 +36,8 @@
         <label>Musik <input type="range" id="mvol" min="0" max="1" step="0.01" /></label>
         <button data-music="menu">Musik: Menü</button><button data-music="race">Musik: Rennen</button><button data-music="">Musik aus</button>
     </div>
-    <div class="row" id="sounds"></div>
+    <div class="row" id="spaces"><span class="group">Raum:</span></div>
+    <div id="sounds"></div>
     <div class="engines" id="engines"></div>
 </section>
 
@@ -60,42 +64,120 @@
     $('vol').oninput = e => audio.setVolume(+e.target.value);
     $('mvol').oninput = e => audio.setMusicVolume(+e.target.value);
     for (const b of document.querySelectorAll('[data-music]')) b.onclick = () => { audio.unlock(); audio.music(b.dataset.music || null); };
-    const names = ['mg', 'rocket', 'explosion', 'small-explosion', 'mine-drop', 'oil', 'shock', 'shield', 'pickup', 'repair', 'turbo', 'backfire', 'crash', 'scrape', 'land',
-        'countdown', 'go', 'lap', 'final-lap', 'finish', 'win', 'lose', 'click', 'hover', 'buy', 'upgrade', 'error', 'wreck'];
-    for (const n of names) {
+    const groups = {
+        Waffen: ['mg', 'rocket', 'explosion', 'small-explosion', 'mine-drop', 'oil', 'shock', 'shield', 'wreck'],
+        Auto: ['turbo', 'pssh', 'backfire', 'pop', 'crash', 'scrape', 'land', 'thud', 'clack', 'whoosh', 'splash'],
+        Rennen: ['countdown', 'go', 'pickup', 'repair', 'lap', 'final-lap', 'finish', 'win', 'lose'],
+        'Menü': ['click', 'hover', 'buy', 'money', 'upgrade', 'error'],
+    };
+    const listed = new Set(Object.values(groups).flat());
+    const rest = audio._debug.sounds.filter(n => !listed.has(n));
+    if (rest.length) groups.Sonstige = rest;
+    const row = title => {
+        const r = document.createElement('div');
+        r.className = 'row';
+        r.innerHTML = `<span class="group">${title}:</span>`;
+        $('sounds').append(r);
+        return r;
+    };
+    const button = (parent, text, fn) => {
         const b = document.createElement('button');
-        b.textContent = n;
-        b.onclick = () => { audio.unlock(); audio.play(n); };
-        $('sounds').append(b);
+        b.textContent = text;
+        b.onclick = () => { audio.unlock(); fn(); };
+        parent.append(b);
+        return b;
+    };
+    for (const [group, names] of Object.entries(groups)) {
+        const r = row(group);
+        for (const n of names) button(r, n, () => audio.play(n));
     }
-    const mgBtn = document.createElement('button');
-    mgBtn.textContent = 'mg ×10/s (1 s)';
-    mgBtn.onclick = () => { audio.unlock(); for (let i = 0; i < 10; i++) setTimeout(() => audio.play('mg', { x: (i - 5) * 6, z: -20 }), i * 100); };
-    $('sounds').append(mgBtn);
+    const spatial = row('Räumlich');
+    button(spatial, 'mg ×10/s (1 s, links → rechts)', () => { for (let i = 0; i < 10; i++) setTimeout(() => audio.play('mg', { x: (i - 5) * 6, z: -20 }), i * 100); });
+    button(spatial, 'Explosion nah, dann fern', () => { audio.play('explosion', { x: 5, z: -8 }); setTimeout(() => audio.play('explosion', { x: -60, z: -180 }), 1600); });
+    button(spatial, 'clack ×4', () => { for (let i = 0; i < 4; i++) setTimeout(() => audio.play('clack'), i * 260); });
     audio.setListener(0, 0, 0);
 
+    // spaces (world reverb)
+    const spaceNames = { room: 'Raum', kidsroom: 'Kinderzimmer', kitchen: 'Küche', workshop: 'Werkstatt', supermarket: 'Supermarkt', attic: 'Dachboden', open: 'Garten (offen)', tunnel: 'Tunnel', none: 'trocken' };
+    const spaceBtns = [];
+    for (const [k, label] of Object.entries(spaceNames)) {
+        const b = button($('spaces'), label, () => { audio.setSpace(k); for (const x of spaceBtns) x.classList.toggle('on', x === b); });
+        if (k === audio.space) b.classList.add('on');
+        spaceBtns.push(b);
+    }
+
     // engines: one panel per drive
+    const sliders = [['rpm', 'Drehzahl', 1.2], ['throttle', 'Gas geben', 1], ['speed', 'Tempo', 1], ['boostSpool', 'Turbo-Ladedruck', 1], ['skid', 'Drift / Quietschen', 1], ['distance', 'Abstand', 300]];
     const engines = [];
     for (const drive of ['Electric', 'Gas', 'Turbo']) {
         const box = document.createElement('div');
         box.className = 'engine';
-        box.innerHTML = `<b>${drive}</b> <button>Start</button><br>`
-            + ['rpm', 'throttle', 'speed', 'boostSpool', 'skid', 'distance'].map(k => `<label>${k}<input type="range" data-k="${k}" min="0" max="${k === 'distance' ? 300 : 1}" step="0.01" value="0"></label>`).join('')
-            + '<label>turbo<input type="checkbox" data-k="turbo"></label><label>airborne<input type="checkbox" data-k="airborne"></label><label>local<input type="checkbox" data-k="local" checked></label>';
-        const e = { drive, box, handle: null };
-        box.querySelector('button').onclick = ev => {
-            audio.unlock();
-            if (e.handle) { e.handle.stop(); e.handle = null; ev.target.textContent = 'Start'; }
-            else { e.handle = audio.engine(drive, { local: box.querySelector('[data-k=local]').checked }); ev.target.textContent = 'Stop'; }
+        box.innerHTML = `<b>${drive}</b> <button data-a="start">Start</button> <button data-a="flyby">Vorbeifahrt</button><br>`
+            + sliders.map(([k, label, max]) => `<label>${label}<input type="range" data-k="${k}" min="0" max="${max}" step="0.01" value="0"><output></output></label>`).join('')
+            + '<label>Boost (turbo)<input type="checkbox" data-k="turbo"></label><label>in der Luft<input type="checkbox" data-k="airborne"></label>'
+            + '<label>eigenes Auto<input type="checkbox" data-k="local" checked></label><label>Auto-Runde<input type="checkbox" data-a="auto"></label>';
+        const e = { drive, box, handle: null, flyby: 0, t0: 0 };
+        const startBtn = box.querySelector('[data-a=start]');
+        const local = box.querySelector('[data-k=local]');
+        const start = () => {
+            if (e.handle) return;
+            e.handle = audio.engine(drive, { local: local.checked });
+            startBtn.textContent = 'Stop';
         };
+        const stop = () => { e.handle?.stop(); e.handle = null; startBtn.textContent = 'Start'; };
+        startBtn.onclick = () => { audio.unlock(); if (e.handle) stop(); else start(); };
+        // a fly-by: another car passes 15 units in front of the listener from left to right at 60 units/s (pan + Doppler)
+        box.querySelector('[data-a=flyby]').onclick = () => {
+            audio.unlock();
+            stop();
+            local.checked = false;
+            start();
+            e.flyby = performance.now();
+        };
+        local.onchange = () => { if (e.handle) { stop(); start(); } };
+        box.querySelector('[data-a=auto]').onchange = ev => { e.t0 = performance.now(); if (ev.target.checked) { audio.unlock(); start(); } };
         engines.push(e);
         $('engines').append(box);
     }
+
+    /** A scripted lap (10 s): accelerate, lift (crackle / blow-off), drift, jump, boost, roll out. */
+    function autoState(t) {
+        t %= 10;
+        const ease = x => x * x * (3 - 2 * x);
+        const base = { skid: 0, airborne: false, turbo: false };
+        if (t < 3) { const v = ease(t / 3); return { ...base, rpm: v, throttle: 1, speed: v, boostSpool: Math.min(1, t / 1.5) }; }
+        if (t < 4) return { ...base, rpm: 1, throttle: 1, speed: 1, boostSpool: 1 };
+        if (t < 5) { const v = 1 - (t - 4) * 0.25; return { ...base, rpm: v, throttle: 0, speed: v, boostSpool: Math.max(0, 1 - (t - 4) * 2.2) }; }
+        if (t < 6.2) return { ...base, rpm: 0.7, throttle: 0.6, speed: 0.7, boostSpool: 0.3, skid: 0.8 };
+        if (t < 7) return { ...base, rpm: 0.8, throttle: 1, speed: 0.8, boostSpool: 0.6, airborne: true };
+        if (t < 8.5) return { ...base, rpm: 0.95, throttle: 1, speed: 0.95, boostSpool: 1, turbo: true };
+        const v = Math.max(0, 0.95 - (t - 8.5) * 0.6);
+        return { ...base, rpm: v, throttle: 0, speed: v, boostSpool: 0 };
+    }
+
     (function frame() {
+        const now = performance.now();
         for (const e of engines) {
             if (!e.handle) continue;
+            const inputs = e.box.querySelectorAll('[data-k]');
+            if (e.box.querySelector('[data-a=auto]').checked) {
+                const a = autoState((now - e.t0) / 1000);
+                for (const i of inputs) {
+                    if (!(i.dataset.k in a)) continue;
+                    if (i.type === 'checkbox') i.checked = a[i.dataset.k]; else i.value = a[i.dataset.k];
+                }
+            }
             const p = {};
-            for (const i of e.box.querySelectorAll('[data-k]')) p[i.dataset.k] = i.type === 'checkbox' ? i.checked : +i.value;
+            for (const i of inputs) p[i.dataset.k] = i.type === 'checkbox' ? i.checked : +i.value;
+            for (const o of e.box.querySelectorAll('output')) o.textContent = (+o.previousElementSibling.value).toFixed(2);
+            if (e.flyby) {
+                const t = (now - e.flyby) / 1000;
+                if (t > 4) e.flyby = 0;
+                else {
+                    delete p.distance;
+                    Object.assign(p, { x: -120 + t * 60, z: -15, vx: 60, vz: 0, rpm: 0.85, throttle: 0.9, speed: 0.85 });
+                }
+            }
             e.handle.update(p);
         }
         requestAnimationFrame(frame);
@@ -141,9 +223,9 @@
         for (const n of audio._debug.sounds) {
             const r = await audio._debug.renderSound(n);
             if (r.rawPeak < 0.01 || r.rms < 0.002) lines.push(`QUIET ${n} peak ${f(r.rawPeak)} rms ${f(r.rms)}`);
-            else lines.push(`${n.padEnd(16)} rawPeak ${f(r.rawPeak)} rms ${f(r.rms)} ${r.duration.toFixed(2)}s`);
+            else lines.push(`${n.padEnd(16)} rawPeak ${f(r.rawPeak)} rms ${f(r.rms)} (normalisiert) ${r.duration.toFixed(2)}s`);
         }
-        const states = { idle: { rpm: 0, throttle: 0 }, full: { rpm: 1, throttle: 1, speed: 1, boostSpool: 1 }, skid: { rpm: 0.5, throttle: 0.5, speed: 0.6, skid: 1 }, turbo: { rpm: 0.8, throttle: 1, speed: 0.8, turbo: true, boostSpool: 0.8 }, far: { rpm: 0.5, throttle: 1, distance: 200, local: false } };
+        const states = { idle: { rpm: 0, throttle: 0 }, full: { rpm: 1, throttle: 1, speed: 1, boostSpool: 1 }, skid: { rpm: 0.5, throttle: 0.5, speed: 0.6, skid: 1 }, turbo: { rpm: 0.8, throttle: 1, speed: 0.8, turbo: true, boostSpool: 0.8 }, air: { rpm: 0.8, throttle: 1, speed: 0.8, airborne: true }, far: { rpm: 0.5, throttle: 1, distance: 200, local: false } };
         for (const d of ['Electric', 'Gas', 'Turbo']) {
             const parts = [];
             for (const [k, p] of Object.entries(states)) {

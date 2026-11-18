@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="utf-8" />
+    <!-- a bots-only race on a world (no server): dev/race.html?layout=kidsroom&cars=5&view=chase|demo&time=day&speed=1 (speed: time factor).
+         Shows per car the lap, the path (main / shortcut) and loopings – for checking tracks. -->
+    <base href="/turbotoys/" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <title>TurboToys · Bot-Rennen</title>
+    <link rel="stylesheet" href="css/comic.css" />
+    <style>
+        @font-face { font-family: Bangers; src: url(fonts/bangers-latin-400-normal.woff2) format('woff2'); }
+        html, body { margin: 0; height: 100%; background: #111; overflow: hidden; font-family: sans-serif; }
+        #stage { position: fixed; inset: 0; }
+        #info { position: fixed; left: 8px; top: 8px; color: #fff; background: rgba(0,0,0,.6); padding: 6px 10px; font: 12px monospace; z-index: 5; white-space: pre; }
+    </style>
+    <script type="importmap">{ "imports": { "three": "./lib/three/three.module.js" } }</script>
+</head>
+<body>
+<div id="stage"></div>
+<div id="tt-comic"></div>
+<div id="info">lädt …</div>
+<script type="module">
+    import { DemoRace } from './js/game/showcase.js';
+    import { Race } from './js/game/race/race.js';
+    import { stage } from './js/game/render/stage.js';
+
+    const q = new URLSearchParams(location.search);
+    const layout = q.get('layout') ?? 'kidsroom';
+    const view = q.get('view') ?? 'chase';
+    const factor = parseFloat(q.get('speed') ?? '1');
+    await document.fonts.load('40px Bangers').catch(() => {});
+    stage.mount(document.getElementById('stage'));
+    // ?json=<url of a layout file> races on a design (editor experiments)
+    const design = q.get('json') ? await fetch(q.get('json')).then(r => r.json()) : null;
+    const race = await new DemoRace({ layout: design?.theme ?? layout, design, timeOfDay: q.get('time') ?? 'day', cars: parseInt(q.get('cars') ?? '5', 10) }).build();
+    window.race = race;
+    window.__ready = true;
+    if (view === 'chase') {
+        race.myCar = race.cars[0];
+        race.updateCamera = dt => Race.prototype.updateCamera.call(race, dt, {});
+    }
+    const info = document.getElementById('info');
+    const stats = race.cars.map(() => ({ shortcuts: 0, loops: 0, falls: 0, wasOn: null }));
+    let shown = 0;
+    stage.show(race.scene, race.camera, (dt, t) => {
+        race.frame(dt * factor, t);
+        race.cars.forEach((car, k) => {
+            const b = car.body;
+            const s = stats[k];
+            if (b.path !== s.wasOn) {
+                if (b.path !== race.track) s.shortcuts++;
+                s.wasOn = b.path;
+            }
+            if (b.rail && !s.inLoop) s.loops++;
+            s.inLoop = !!b.rail;
+        });
+        shown -= dt;
+        if (shown > 0) return;
+        shown = 0.25;
+        info.textContent = `${layout} · ${race.track.length.toFixed(0)} u (kürzeste ${race.track.shortest.toFixed(0)}) · ${race.track.branches.length} Abkürzungen · ${race.track.loops.length} Loopings · ${race.track.tunnels.length} Tunnel\n`
+            + race.cars.map((car, k) => {
+                const b = car.body;
+                const s = stats[k];
+                return `${k} ${car.info.name.padEnd(12)} Runde ${(b.distance / race.track.count).toFixed(2).padStart(6)}  ${String(Math.round(b.speed * 2.2)).padStart(3)} km/h  ${b.rail ? 'LOOPING' : b.path === race.track ? 'Haupt  ' : 'Abk. ' + b.path.id + ' '}  Abk ${s.shortcuts}  Loop ${s.loops}`;
+            }).join('\n');
+    });
+</script>
+</body>
+</html>

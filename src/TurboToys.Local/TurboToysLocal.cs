@@ -124,6 +124,10 @@ public sealed class TurboToysLocal : ILocalGame
                     ("PUT", ["garage", var id, "look"]) => Look(Long(id), Read<LookBody>(body)),
                     ("PUT", ["garage", "select"]) => Select(Read<SelectBody>(body)),
                     ("GET", ["tracks"]) => LocalResponse.Ok(Tracks()),
+                    ("GET", ["tracks", var id, "design"]) => DesignOf(Long(id)),
+                    ("GET", ["designs"]) => LocalResponse.Ok(_profile.Tracks.OrderByDescending(t => t.UpdateDate).Select(Views.Design).ToList()),
+                    ("POST", ["designs"]) => SaveDesign(Read<DesignInput>(body)),
+                    ("DELETE", ["designs", var id]) => DeleteDesign(Long(id)),
                     ("GET", ["cups"]) => LocalResponse.Ok(Cups()),
                     ("POST", ["cups", var id, "enter"]) => Enter(Long(id)),
                     ("POST", ["cups", "runs", var token, "abandon"]) => Abandon(token),
@@ -162,6 +166,9 @@ public sealed class TurboToysLocal : ILocalGame
     private sealed record SelectBody(long Id);
 
     private sealed record AvatarBody(string? Face, string? Hair, string? Helmet, string? Color, string? Skin);
+
+    /// <summary>The local player as the rules see it (a guest, never an administrator).</summary>
+    private Actor LocalActor => new(LocalPlayerId, _profile.Player.DisplayName, false);
 
     private PlayerView PlayerView() => Views.Player(_profile.Player, false);
 
@@ -230,9 +237,48 @@ public sealed class TurboToysLocal : ILocalGame
     private object Tracks()
     {
         var level = Progression.LevelOf(_profile.Player.Xp);
-        return _tracks.Where(t => t.IsEnabled).OrderBy(t => t.SortOrder)
+        return _tracks.Where(t => t.IsEnabled).OrderBy(t => t.SortOrder).Concat(_profile.Tracks.OrderBy(t => t.Id))
             .Select(t => new { track = Views.Track(t, level), bestLapMs = _profile.BestLaps.TryGetValue(t.Id, out var ms) ? ms : (int?)null })
             .ToList();
+    }
+
+    private LocalResponse DesignOf(long id)
+    {
+        var track = _tracks.Concat(_profile.Tracks).FirstOrDefault(t => t.Id == id);
+        if (track?.Design is null || !DesignRules.CanSeeDesign(track, LocalActor))
+        {
+            throw new BusinessException("Diese Strecke hat keinen eigenen Plan.");
+        }
+
+        return LocalResponse.Ok(DesignRules.DesignOf(track));
+    }
+
+    private LocalResponse SaveDesign(DesignInput input)
+    {
+        var track = input.Id is > 0
+            ? _profile.Tracks.FirstOrDefault(t => t.Id == input.Id) ?? throw new BusinessException("Diese Strecke gibt es nicht.")
+            : new Track { OwnerId = LocalPlayerId };
+        DesignRules.Apply(track, input, _profile.Tracks.Count);
+        var now = DateTime.UtcNow;
+        if (track.Id == 0)
+        {
+            track.Id = _profile.NewTrackId();
+            track.CreateDate = now;
+            _profile.Tracks.Add(track);
+        }
+
+        track.UpdateDate = now;
+        _profile.Save();
+        return LocalResponse.Ok(Views.Design(track));
+    }
+
+    private LocalResponse DeleteDesign(long id)
+    {
+        var track = _profile.Tracks.FirstOrDefault(t => t.Id == id) ?? throw new BusinessException("Diese Strecke gibt es nicht.");
+        _profile.Tracks.Remove(track);
+        _profile.BestLaps.Remove(id);
+        _profile.Save();
+        return LocalResponse.Ok(new { ok = true });
     }
 
     private IReadOnlyList<CupView> Cups()
@@ -423,8 +469,10 @@ public sealed class TurboToysLocal : ILocalGame
 
     private RaceRoom RequireRoom() => _room ?? throw new BusinessException("Du bist in keinem Raum.");
 
+    /// <summary>A seeded track or one of the player's own (track editor); without an id the first seeded one.</summary>
     private Track TrackOf(long id) =>
-        (id > 0 ? _tracks.FirstOrDefault(t => t.Id == id) : _tracks.OrderBy(t => t.SortOrder).FirstOrDefault()) ?? throw new BusinessException("Diese Strecke gibt es nicht.", "trackId");
+        (id > 0 ? _tracks.Concat(_profile.Tracks).FirstOrDefault(t => t.Id == id && DesignRules.CanRace(t, LocalActor)) : _tracks.OrderBy(t => t.SortOrder).FirstOrDefault())
+        ?? throw new BusinessException("Diese Strecke gibt es nicht.", "trackId");
 
     private GarageCar Own(long id) => _profile.Garage.FirstOrDefault(g => g.Id == id) ?? throw new BusinessException("Dieses Auto steht nicht in deiner Garage.");
 

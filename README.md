@@ -23,7 +23,9 @@ mit Elektro-, Benzin- und Turbo-Antrieb, Waffen aus Kisten, Tuning, Pokalen und 
 - 🔧 **Garage** – mit Preisgeld („Schrauben“) neue Autos kaufen und Motor, Reifen, Panzerung, Turbo und Waffen tunen; Lack, Aufkleber und Startnummer.
 - 🏆 **Pokale** – mehrere Rennen gegen dieselben Gegner, Punkte pro Platz, Preisgeld für die Besten.
 - 👤 **Profil** – Comic-Avatar (Gesicht, Frisur, Helm …), Level mit Freischaltungen, Statistik und Rangliste.
-- 🌍 **Sechs detailreiche Welten** bei Tag, Abend oder Nacht – mit Sprungschanzen, Rampen und erhöhten Abschnitten.
+- 🌍 **Sechs detailreiche Welten** bei Tag, Abend oder Nacht – mit Abkürzungen (z. B. quer durchs Spülbecken), Brücken, Tunneln durch Kartons, Loopings, Sprungschanzen und Auffahrten auf Tisch und Bett.
+- 🛠️ **Streckenbau** – eigene Strecken wie bei einer Autorennbahn zusammenstecken: Geraden, Kurven, Rampen, Schanzen, Turbo-Pfeile, Kisten, Karton-Tunnel und Loopings; Kreuzungen und Brücken; „Schließen“ baut den Rest bis zum Start. 3D-Vorschau, Probefahrt, Rennen gegen Bots und Freunde.
+- 🔊 **Sound** – vollständig synthetisiert: Elektro-Surren, Nitro-Knattern, Turbo-Pfeifen, Hall je Raum, Echo im Tunnel.
 - 🎨 **Comic-Look wie im Heft** – Tusche-Konturen, Rasterpunkte, Lautmalerei („KAWUMM!“, „ZOOM!“) und Comic-Panels, die Unfälle im Bild zeigen.
 - 🌐 **Mehrspieler** – Räume mit Code und Einladungslink, mit oder ohne Bots. Offline in der App gegen Bots.
 

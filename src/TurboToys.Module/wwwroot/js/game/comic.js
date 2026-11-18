@@ -144,6 +144,9 @@ export const WORDS = {
     rocket: ['FFFSSSHH!', 'ZISCH!'],
     mine: ['KLACK!'],
     kill: ['ERWISCHT!', 'VERSCHROTTET!', 'SCHROTT!'],
+    loop: ['LOOPING!', 'WUIIIH!', 'HUIII!'],
+    splash: ['PLATSCH!', 'SPLASH!', 'PLITSCH!'],
+    fall: ['UUPS!', 'AUA!', 'HOPPLA!'],
 };
 
 export function word(kind) {
