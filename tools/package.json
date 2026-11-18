@@ -1,0 +1,10 @@
+{
+  "name": "turbotoys-tools",
+  "private": true,
+  "type": "module",
+  "description": "Developer tools of TurboToys (screenshots with the installed Edge through Playwright). Not part of the game.",
+  "devDependencies": {
+    "fontkit": "^3.0.0",
+    "playwright-core": "^1.56.0"
+  }
+}

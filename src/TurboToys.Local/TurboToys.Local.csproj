@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The offline game of the app (MatGame.Shell): answers the calls of the player app that online go to the master (the game API and the hub) on the device,
+    with the same rules (TurboToys.Core) and the same messages. No ASP.NET, no database: the profile is a JSON file in the app's data folder.
+  -->
+  <PropertyGroup>
+    <RootNamespace>TurboToys.Local</RootNamespace>
+    <AssemblyName>TurboToys.Local</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\MatGame\src\MatGame.Local\MatGame.Local.csproj" />
+    <ProjectReference Include="..\TurboToys.Core\TurboToys.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="TurboToys.Tests" />
+  </ItemGroup>
+
+</Project>

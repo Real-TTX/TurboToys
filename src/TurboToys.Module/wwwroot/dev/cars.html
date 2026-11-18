@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="utf-8" />
+    <!-- developer preview of the RC cars:
+         dev/cars.html                                  all 8 bodies (2 × 4)
+         dev/cars.html?body=muscle                      one car big, slowly turning
+         &drive=electric|gas|turbo &decal=flames &paint=%23e2392f &accent=%23f6c638 &number=7 &quality=high|medium|low
+         &angle=0.8 (fixed camera angle in radians, for screenshots) &steer=0.3 &comic=0 &showroom=1 &atlas=1 (show the paint canvas)
+         &drives=1 (with body: the three drives side by side) &points=1 (mark exhausts, headlights, gun mount) -->
+    <base href="/turbotoys/" />
+    <link rel="icon" href="data:," />
+    <title>TurboToys · Auto-Vorschau</title>
+    <style>
+        @font-face { font-family: Bangers; src: url(fonts/bangers-latin-400-normal.woff2) format('woff2'); }
+        html, body { margin: 0; height: 100%; background: #111; overflow: hidden; font-family: sans-serif; }
+        #stage { position: fixed; inset: 0; }
+        #info { position: fixed; left: 8px; top: 8px; color: #fff; background: rgba(0,0,0,.55); padding: 6px 10px; font: 12px monospace; z-index: 2; white-space: pre; }
+        .label { position: fixed; z-index: 2; transform: translate(-50%, 0); pointer-events: none; font: 22px Bangers, Impact, sans-serif; letter-spacing: 1px;
+                 color: #14100c; background: #f7f3ea; border: 3px solid #14100c; padding: 0 10px; box-shadow: 3px 3px 0 #14100c; white-space: nowrap; }
+        .label small { font: 13px Bangers, Impact, sans-serif; color: #555; margin-left: 6px; }
+        #atlas { position: fixed; right: 8px; bottom: 8px; width: 360px; z-index: 3; border: 2px solid #000; background: #fff; }
+    </style>
+    <script type="importmap">{ "imports": { "three": "./lib/three/three.module.js" } }</script>
+</head>
+<body>
+<div id="stage"></div>
+<div id="info">lädt …</div>
+<script type="module">
+    import * as THREE from 'three';
+    import { buildCar, buildShowroomCar, BODIES, DECALS, PAINTS } from './js/game/cars/models.js';
+    import { ComicPipeline } from './js/game/render/postfx.js';
+    import { toon, canvasTexture, LAYER_FX } from './js/game/render/toon.js';
+
+    const q = new URLSearchParams(location.search);
+    const single = q.get('body');
+    const trio = !!single && q.get('drives') === '1'; // one body with all three drives side by side
+    const quality = q.get('quality') ?? 'high';
+    const angle = q.has('angle') ? parseFloat(q.get('angle')) : null;
+    const steer = parseFloat(q.get('steer') ?? (single && q.get('drives') !== '1' ? '0.3' : '0'));
+    await document.fonts.load('40px Bangers').catch(() => {});
+
+    const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
+    document.getElementById('stage').appendChild(renderer.domElement);
+    const pipeline = new ComicPipeline(renderer, { quality });
+    pipeline.enabled = q.get('comic') !== '0';
+
+    // ---- scene: light paper floor, sky colour, hemisphere + sun with shadows
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#bfe0f0');
+    const floorTex = canvasTexture(256, 256, (ctx, w, h) => {
+        ctx.fillStyle = '#efe5cf';
+        ctx.fillRect(0, 0, w, h);
+        ctx.strokeStyle = 'rgba(120, 95, 60, 0.18)';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(0, 0, w, h);
+    }, { repeat: [60, 60] });
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(240, 240), toon(0xffffff, { map: floorTex }));
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    scene.add(floor);
+    scene.add(new THREE.HemisphereLight('#cfe8ff', '#8a6a4a', 1.1));
+    scene.add(new THREE.AmbientLight('#ffffff', 0.6));
+    const sun = new THREE.DirectionalLight('#fff3dc', 2.6);
+    sun.position.set(14, 30, 12);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    Object.assign(sun.shadow.camera, { left: -24, right: 24, top: 24, bottom: -24, near: 1, far: 90 });
+    sun.shadow.bias = -0.0005;
+    sun.shadow.normalBias = 0.04;
+    scene.add(sun);
+    scene.add(sun.target);
+
+    // ---- the cars
+    const drives = ['electric', 'gas', 'turbo'];
+    const pick = (name, fallback) => q.get(name) ?? fallback;
+    const optionsFor = (i) => ({
+        paint: pick('paint', PAINTS[[0, 5, 1, 4, 2, 6, 7, 3][i % 8]]),
+        accent: q.get('accent') ?? undefined,
+        decal: pick('decal', DECALS[1 + (i % 5)]),
+        drive: pick('drive', drives[i % 3]),
+        number: q.has('number') ? parseInt(q.get('number'), 10) : i + 1,
+        quality,
+    });
+    const build = q.get('showroom') === '1' ? buildShowroomCar : buildCar;
+    buildCar('muscle', { quality }); // warm-up (JIT), not counted
+
+    const cars = [];
+    const lines = [];
+    const list = trio ? [single, single, single] : single ? [single] : BODIES;
+    list.forEach((body, i) => {
+        const index = single ? BODIES.indexOf(body) : i;
+        const options = optionsFor(index < 0 ? 0 : index);
+        if (trio) options.drive = drives[i];
+        const t0 = performance.now();
+        const car = build(body, options);
+        const ms = performance.now() - t0;
+        let tris = 0, meshes = 0;
+        car.group.traverse(o => {
+            if (!o.isMesh) return;
+            meshes++;
+            const g = o.geometry;
+            tris += (g.index ? g.index.count : g.attributes.position.count) / 3;
+        });
+        if (trio) {
+            car.group.position.set((i - 1) * 5.4, 0, 0);
+            car.group.rotation.y = angle ?? 0.62;
+        } else if (single) {
+            car.group.position.set(0, 0, 0);
+        } else {
+            const col = i % 4, row = Math.floor(i / 4);
+            car.group.position.set((col - 1.5) * 6.2, 0, (row - 0.5) * -7.4);
+            car.group.rotation.y = angle ?? 0.62;
+        }
+        car.wheels.forEach(w => { if (w.front) w.pivot.rotation.y = steer; });
+        if (q.get('points') === '1') {
+            // debug markers: exhausts orange, headlights yellow, gun mount red
+            const dot = (p, color, r = 0.09) => { const m = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8), new THREE.MeshBasicMaterial({ color, depthTest: false })); m.renderOrder = 9; m.position.copy(p); car.group.add(m); };
+            car.exhausts.forEach(p => dot(p, '#ff7a00'));
+            car.headlights.forEach(p => dot(p, '#ffee00'));
+            dot(car.gunMount, '#ff0000', 0.12);
+        }
+        scene.add(car.group);
+        cars.push({ body, car, options });
+        const s = car.size;
+        lines.push(`${body.padEnd(8)} ${options.drive.padEnd(8)} ${options.decal.padEnd(8)} ${String(Math.round(tris)).padStart(6)} tris ${String(meshes).padStart(3)} meshes ${ms.toFixed(1).padStart(5)} ms  ${s.length.toFixed(2)}×${s.width.toFixed(2)}×${s.height.toFixed(2)}`);
+    });
+    window.__cars = cars;
+
+    // labels
+    const labels = cars.map(({ body, options }) => {
+        const el = document.createElement('div');
+        el.className = 'label';
+        el.innerHTML = `${body}<small>${options.drive} · ${options.decal}</small>`;
+        if (!single || trio) document.body.appendChild(el);
+        return el;
+    });
+
+    if (q.get('atlas') === '1') {
+        let map = null;
+        cars[0].car.body.traverse(o => { if (o.isMesh && o.material.map) map = o.material.map; });
+        if (map) {
+            const img = document.createElement('img');
+            img.id = 'atlas';
+            img.src = map.image.toDataURL();
+            document.body.appendChild(img);
+        }
+    }
+
+    // ---- camera
+    const camera = new THREE.PerspectiveCamera(single ? 34 : 38, innerWidth / innerHeight, 0.5, 300);
+    function place(t) {
+        if (trio) {
+            camera.position.set(0, 8.5, 12.5);
+            camera.lookAt(0, 0.6, 0);
+        } else if (single) {
+            const a = angle ?? 0.7;
+            camera.position.set(Math.sin(a) * 9.2, 3.9, Math.cos(a) * 9.2);
+            camera.lookAt(0, 0.85, 0);
+            if (angle === null) cars[0].car.group.rotation.y = t * 0.35;
+        } else {
+            camera.position.set(0, 15, 18);
+            camera.lookAt(0, 0.3, -0.5);
+        }
+    }
+    addEventListener('resize', () => {
+        renderer.setSize(innerWidth, innerHeight);
+        camera.aspect = innerWidth / innerHeight;
+        camera.updateProjectionMatrix();
+    });
+
+    const info = document.getElementById('info');
+    const head = `body     drive    decal      triangles meshes  build   size (l×w×h)\n`;
+    let frames = 0;
+    let last = performance.now();
+    const timer = new THREE.Timer();
+    const v = new THREE.Vector3();
+    function loop() {
+        timer.update(); const t = timer.getElapsed();
+        place(t);
+        for (const { car } of cars) {
+            car.antenna.rotation.x = Math.sin(t * 3.1) * 0.06;
+            car.antenna.rotation.z = Math.sin(t * 2.3) * 0.05;
+            if (angle === null) car.wheels.forEach(w => { w.spin.rotation.x = t * 2; });
+        }
+        pipeline.render(scene, camera, { time: t });
+        if (!single || trio) {
+            cars.forEach(({ car }, i) => {
+                v.setFromMatrixPosition(car.group.matrixWorld);
+                v.y = 0;
+                v.z += trio ? 2.6 : 3.3;
+                v.project(camera);
+                labels[i].style.left = `${(v.x * 0.5 + 0.5) * innerWidth}px`;
+                labels[i].style.top = `${(-v.y * 0.5 + 0.5) * innerHeight + 4}px`;
+            });
+        }
+        frames++;
+        const now = performance.now();
+        if (now - last > 1000 || frames === 1) {
+            info.textContent = head + lines.join('\n') + `\n${frames} fps · calls ${renderer.info.render.calls} · tris ${(renderer.info.render.triangles / 1000).toFixed(0)}k`;
+            frames = 0;
+            last = now;
+        }
+        requestAnimationFrame(loop);
+    }
+    loop();
+    window.__ready = true;
+</script>
+</body>
+</html>

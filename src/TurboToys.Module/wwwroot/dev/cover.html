@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="utf-8" />
+    <!-- developer page: the picture of the portal card (img/cover.jpg) – a bots-only race of the menu with the logo. tools/cover.mjs screenshots it. -->
+    <base href="/turbotoys/" />
+    <title>TurboToys · Titelbild</title>
+    <link rel="stylesheet" href="css/play.css" />
+    <style>
+        body { background: #14100c; }
+        .logo { position: fixed; left: 28px; bottom: 22px; width: 46%; filter: drop-shadow(6px 6px 0 #14100c); z-index: 3; }
+    </style>
+    <script type="importmap">{ "imports": { "three": "./lib/three/three.module.js" } }</script>
+</head>
+<body>
+<div id="tt-stage" class="stage"></div>
+<div id="tt-comic" class="comic-layer"></div>
+<img class="logo" src="img/logo/turbotoys-logo-dark.svg" alt="" />
+<script type="module">
+    import { stage } from './js/game/render/stage.js';
+    import { DemoRace } from './js/game/showcase.js';
+    await document.fonts.load('40px Bangers').catch(() => {});
+    stage.mount(document.getElementById('tt-stage'));
+    const q = new URLSearchParams(location.search);
+    const demo = await new DemoRace({ layout: q.get('layout') ?? 'kidsroom', timeOfDay: q.get('time') ?? 'day', cars: 6 }).build();
+    stage.show(demo.scene, demo.camera, (dt, t) => demo.frame(dt, t));
+    setTimeout(() => (window.__ready = true), Number(q.get('wait') ?? 9000));
+</script>
+</body>
+</html>

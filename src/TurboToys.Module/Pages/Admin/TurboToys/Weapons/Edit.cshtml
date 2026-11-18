@@ -1,0 +1,36 @@
+@page "/Admin/TurboToys/Weapons/Edit"
+@model TurboToys.Pages.Admin.Weapons.EditModel
+@{
+    ViewData["Title"] = Model.IsNew ? "Neue Waffe" : Model.Name;
+    ViewData["Crumbs"] = new List<(string, string?)> { ("Administration", "/Admin"), ("TurboToys", "/Admin/TurboToys"), ("Waffen", "/Admin/TurboToys/Weapons"), (Model.IsNew ? "Neu" : Model.Name, null) };
+    ViewData["Width"] = "narrow";
+}
+<partial name="_Assets" />
+
+<form class="mat-form" method="post" novalidate>
+    <partial name="_FormSummary" model="ViewData.ModelState" />
+    <div class="mat-card">
+        <div class="mat-card__head"><h2 class="mat-card__title">Waffe</h2></div>
+        <div class="mat-card__body mat-form">
+            <md-field name="Name" label="Name" required value="@Model.Name" maxlength="60" />
+            <md-field name="Description" kind="textarea" label="Beschreibung" value="@Model.Description" maxlength="400" rows="2" optional="true" />
+            <md-field name="Kind" kind="radios" label="Art" value="@Model.Kind.ToString()" options="Model.Kinds" hint="Pro Art zählt im Rennen die erste aktive Waffe (Reihenfolge)." />
+            <md-field name="IsEnabled" kind="switch" label="Aktiv" value="@Model.IsEnabled.ToString()" />
+        </div>
+    </div>
+
+    <div class="mat-card">
+        <div class="mat-card__head"><h2 class="mat-card__title">Wirkung</h2></div>
+        <div class="mat-card__body mat-form mat-grid mat-grid--2">
+            @* only the fields the kind uses are shown *@
+            <md-field name="Damage" kind="number" label="Schaden" required value="@Model.Damage" min="0" max="200" show-if="Kind" show-value="MachineGun,Rocket,Mine,Shock" hint="MG: pro Kugel · Schock: jedes Auto in der Nähe." />
+            <md-field name="Amount" kind="number" label="Stück pro Kiste" required value="@Model.Amount" min="1" max="10" show-if="Kind" show-value="Rocket,Mine,Oil,Shock,Shield" />
+            <md-field name="CooldownMs" kind="number" label="Pause zwischen zwei Schüssen (ms)" required value="@Model.CooldownMs" min="50" max="10000" step="10" />
+            <md-field name="CrateWeight" kind="number" label="Häufigkeit in Kisten" required value="@Model.CrateWeight" min="0" max="100" show-if="Kind" show-value="Rocket,Mine,Oil,Shock,Shield" hint="0 = nie; sonst im Verhältnis zu den anderen." />
+            <md-field name="SortOrder" kind="number" label="Reihenfolge" required value="@Model.SortOrder" />
+        </div>
+    </div>
+
+    <md-buttons save="@(Model.IsNew ? "Anlegen" : "Speichern")" back="/Admin/TurboToys/Weapons" delete-handler="@(Model.IsNew ? null : "Delete")" delete-label="Löschen"
+                delete-confirm="@($"„{Model.Name}“ wirklich aus dem Arsenal löschen?")" />
+</form>

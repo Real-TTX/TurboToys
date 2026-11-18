@@ -1,0 +1,54 @@
+@page "/Admin/TurboToys/Races/Edit"
+@model TurboToys.Pages.Admin.Races.EditModel
+@{
+    var r = Model.Race!;
+    ViewData["Title"] = r.Name;
+    ViewData["PageSub"] = $"{RaceLogic.KindName(r.Kind)} · {RaceLogic.StatusName(r.Status)}";
+    ViewData["Crumbs"] = new List<(string, string?)> { ("Administration", "/Admin"), ("TurboToys", "/Admin/TurboToys"), ("Rennen", "/Admin/TurboToys/Races"), (r.Name, null) };
+}
+<partial name="_Assets" />
+
+<form class="mat-form" method="post" novalidate>
+    <partial name="_FormSummary" model="ViewData.ModelState" />
+
+    <div class="mat-card">
+        <div class="mat-card__body">
+            <dl class="mat-kv">
+                <dt>Strecke</dt><dd>@(r.Track?.Name ?? "–")</dd>
+                <dt>Runden</dt><dd class="mat-mono">@r.Laps</dd>
+                <dt>Waffen</dt><dd>@(r.Weapons ? "an" : "aus")</dd>
+                <dt>Start</dt><dd class="mat-mono">@Ui.Stamp(r.StartDate)</dd>
+                <dt>Ende</dt><dd class="mat-mono">@Ui.Stamp(r.EndDate)</dd>
+                <dt>Kennung</dt><dd class="mat-mono">@r.Token</dd>
+            </dl>
+        </div>
+    </div>
+
+    <div class="mat-card tt-gap">
+        <div class="mat-card__head"><h2 class="mat-card__title">Ergebnis</h2></div>
+        <md-table caption="Ergebnis">
+            <thead>
+                <tr><th scope="col" class="mat-num">Platz</th><th scope="col">Fahrer</th><th scope="col" class="mat-hide-sm">Auto</th><th scope="col" class="mat-num">Zeit</th><th scope="col" class="mat-num mat-hide-sm">Beste Runde</th><th scope="col" class="mat-num">Abschüsse</th><th scope="col" class="mat-num mat-hide-sm">Schrott</th><th scope="col" class="mat-num">Schrauben</th><th scope="col" class="mat-num mat-hide-sm">XP</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var e in r.Entries.OrderBy(e => e.Place == 0 ? 99 : e.Place).ThenBy(e => e.Seat))
+                {
+                    <tr>
+                        <td data-label="Platz" class="mat-num">@if (e.Place > 0) { <span class="tt-place tt-place--@e.Place">@e.Place</span> } else { <span>–</span> }</td>
+                        <td data-label="Fahrer">@if (e.PlayerId is { } pid) { <a href="/Admin/TurboToys/Players/Edit?id=@pid">@e.Name</a> } else { @e.Name } @if (e.IsBot) { <span class="mat-pill mat-pill--plain">Bot</span> }</td>
+                        <td data-label="Auto" class="mat-hide-sm">@e.CarName</td>
+                        <td data-label="Zeit" class="mat-num mat-mono">@TurboToys.Pages.Admin.Races.EditModel.Time(e.TimeMs)</td>
+                        <td data-label="Beste Runde" class="mat-num mat-mono mat-hide-sm">@TurboToys.Pages.Admin.Races.EditModel.Time(e.BestLapMs)</td>
+                        <td data-label="Abschüsse" class="mat-num mat-mono">@e.Kills</td>
+                        <td data-label="Schrott" class="mat-num mat-mono mat-hide-sm">@e.Wrecks</td>
+                        <td data-label="Schrauben" class="mat-num mat-mono">@e.MoneyGained</td>
+                        <td data-label="XP" class="mat-num mat-mono mat-hide-sm">@e.XpGained</td>
+                    </tr>
+                }
+            </tbody>
+        </md-table>
+    </div>
+
+    <md-buttons back="/Admin/TurboToys/Races" delete-handler="@(r.Status == RaceStatus.Running ? null : "Delete")" delete-label="Löschen"
+                delete-confirm="Dieses Rennen aus dem Verlauf löschen? Gewonnenes Geld und Erfahrung behalten die Spieler." />
+</form>

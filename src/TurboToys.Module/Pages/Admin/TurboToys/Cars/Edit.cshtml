@@ -1,0 +1,76 @@
+@page "/Admin/TurboToys/Cars/Edit"
+@model TurboToys.Pages.Admin.Cars.EditModel
+@{
+    ViewData["Title"] = Model.IsNew ? "Neues Auto" : Model.Name;
+    ViewData["Crumbs"] = new List<(string, string?)> { ("Administration", "/Admin"), ("TurboToys", "/Admin/TurboToys"), ("Autos", "/Admin/TurboToys/Cars"), (Model.IsNew ? "Neu" : Model.Name, null) };
+    ViewData["Width"] = "narrow";
+}
+<partial name="_Assets" />
+
+<form class="mat-form" method="post" novalidate>
+    <partial name="_FormSummary" model="ViewData.ModelState" />
+
+    <div data-tabs>
+        <md-tab-group label="Bereiche des Autos">
+            <md-tab-button panel="car-general" icon="car" active="true">Allgemein</md-tab-button>
+            <md-tab-button panel="car-values" icon="gauge">Werte</md-tab-button>
+            <md-tab-button panel="car-shop" icon="coin">Handel</md-tab-button>
+        </md-tab-group>
+
+        <md-tab-panel id="car-general" active="true">
+            <div class="mat-card">
+                <div class="mat-card__body mat-form">
+                    <md-field name="Name" label="Name" required value="@Model.Name" maxlength="60" />
+                    <md-field name="Key" label="Schlüssel" required value="@Model.Key" maxlength="24" mono="true" hint="Kleinbuchstaben und Ziffern; bleibt fest (Bots, Pokale)." />
+                    <md-field name="Description" kind="textarea" label="Beschreibung" value="@Model.Description" maxlength="400" rows="2" optional="true" />
+                    <md-field name="Body" kind="select" label="Karosserie (3D-Modell)" value="@Model.Body" options="Model.Bodies" />
+                    <md-field name="Drive" kind="radios" label="Antrieb" value="@Model.Drive.ToString()" options="Model.Drives" />
+                    <md-field name="DefaultPaint" kind="colour" label="Werkslackierung" value="@Model.DefaultPaint" options="Model.Paints" />
+                </div>
+            </div>
+        </md-tab-panel>
+
+        <md-tab-panel id="car-values">
+            <div class="mat-card">
+                <div class="mat-card__head"><h2 class="mat-card__title">Werte (1 bis 10)</h2></div>
+                <div class="mat-card__body mat-form mat-grid mat-grid--2">
+                    <md-field name="Speed" kind="number" label="Höchstgeschwindigkeit" required value="@Model.Speed" min="1" max="10" />
+                    <md-field name="Acceleration" kind="number" label="Beschleunigung" required value="@Model.Acceleration" min="1" max="10" />
+                    <md-field name="Grip" kind="number" label="Grip" required value="@Model.Grip" min="1" max="10" />
+                    <md-field name="Armor" kind="number" label="Panzerung" required value="@Model.Armor" min="1" max="10" />
+                    <md-field name="Weight" kind="number" label="Gewicht" required value="@Model.Weight" min="1" max="10" hint="Wer bei Zusammenstößen wen schiebt." />
+                    <md-field name="TurboCapacity" kind="number" label="Turbo-Tank" required value="@Model.TurboCapacity" min="1" max="10" />
+                </div>
+            </div>
+            @if (Model.Spec is { } s)
+            {
+                <div class="mat-card tt-gap">
+                    <div class="mat-card__head"><h2 class="mat-card__title">So fährt es sich (ohne Tuning)</h2></div>
+                    <div class="mat-card__body">
+                        <dl class="mat-kv">
+                            <dt>Spitze</dt><dd class="mat-mono">@Ui.Number(s.TopSpeed) Einheiten/s (≈ @Ui.Number(Math.Round(s.TopSpeed * 2.2)) km/h im Spiel)</dd>
+                            <dt>Schub</dt><dd class="mat-mono">@Ui.Number(s.Acceleration) Einheiten/s²</dd>
+                            <dt>Grip</dt><dd class="mat-mono">@Ui.Number(s.Grip)</dd>
+                            <dt>Lebenspunkte</dt><dd class="mat-mono">@s.Health</dd>
+                            <dt>Turbo</dt><dd class="mat-mono">@Ui.Number(s.TurboSeconds) s</dd>
+                        </dl>
+                    </div>
+                </div>
+            }
+        </md-tab-panel>
+
+        <md-tab-panel id="car-shop">
+            <div class="mat-card">
+                <div class="mat-card__body mat-form mat-grid mat-grid--2">
+                    <md-field name="Price" kind="number" label="Preis (Schrauben)" required value="@Model.Price" min="0" hint="0 = Startauto für neue Spieler." />
+                    <md-field name="UnlockLevel" kind="number" label="Ab Level" required value="@Model.UnlockLevel" min="1" max="50" />
+                    <md-field name="SortOrder" kind="number" label="Reihenfolge" required value="@Model.SortOrder" />
+                    <md-field name="IsEnabled" kind="switch" label="Im Handel" value="@Model.IsEnabled.ToString()" />
+                </div>
+            </div>
+        </md-tab-panel>
+    </div>
+
+    <md-buttons save="@(Model.IsNew ? "Anlegen" : "Speichern")" back="/Admin/TurboToys/Cars" delete-handler="@(Model.IsNew ? null : "Delete")" delete-label="Löschen"
+                delete-confirm="@($"„{Model.Name}“ aus dem Handel nehmen und löschen? Wer es schon hat, behält es.")" />
+</form>

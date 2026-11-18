@@ -1,0 +1,94 @@
+@page "/Admin/TurboToys"
+@model TurboToys.Pages.Admin.IndexModel
+@{
+    ViewData["Title"] = "Übersicht";
+    ViewData["Crumbs"] = new List<(string, string?)> { ("Administration", "/Admin"), ("TurboToys", null) };
+}
+<partial name="_Assets" />
+
+<div class="mat-stats">
+    <a class="mat-stat" href="/Admin/TurboToys/Players">
+        <span class="mat-stat__label">@Ui.Icon("users") Spieler</span>
+        <span class="mat-stat__value">@Model.Numbers.Players</span>
+        <span class="mat-stat__delta">dazu @Model.Numbers.Guests Gäste</span>
+    </a>
+    <a class="mat-stat" href="/Admin/TurboToys/Races?status=Finished">
+        <span class="mat-stat__label">@Ui.Icon("flag") Rennen heute</span>
+        <span class="mat-stat__value">@Model.Numbers.RacesToday</span>
+        <span class="mat-stat__delta">@Model.Numbers.RacesTotal insgesamt</span>
+    </a>
+    <div class="mat-stat">
+        <span class="mat-stat__label">@Ui.Icon("network") Live</span>
+        <span class="mat-stat__value">@Model.Racing</span>
+        <span class="mat-stat__delta">Rennen laufen · @Model.Lobbies Lobbys · @Model.Drivers Fahrer</span>
+    </div>
+    <a class="mat-stat" href="/Admin/TurboToys/Cups">
+        <span class="mat-stat__label">@Ui.Icon("trophy") Pokale gewonnen</span>
+        <span class="mat-stat__value">@Model.Numbers.CupsWon</span>
+        <span class="mat-stat__delta">von allen Spielern</span>
+    </a>
+</div>
+
+<section class="mat-card tt-gap">
+    <div class="mat-card__head"><h2 class="mat-card__title">Live: Räume im Speicher</h2></div>
+    @if (Model.Rooms.Count == 0)
+    {
+        <div class="mat-card__body"><p class="mat-muted">Gerade fährt niemand.</p></div>
+    }
+    else
+    {
+        <md-table caption="Räume im Speicher">
+            <thead>
+                <tr><th scope="col">Raum</th><th scope="col">Code</th><th scope="col">Art</th><th scope="col">Status</th><th scope="col">Strecke</th><th scope="col" class="mat-num">Spieler</th><th scope="col" class="mat-num">Bots</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var r in Model.Rooms)
+                {
+                    <tr>
+                        <td data-label="Raum">@r.Name</td>
+                        <td data-label="Code" class="mat-mono">@r.Code</td>
+                        <td data-label="Art">@RaceLogic.KindName(r.Kind)</td>
+                        <td data-label="Status"><span class="mat-pill @(r.Status == TurboToys.Game.RoomStatus.Racing ? "mat-pill--warn" : "mat-pill--ok")">@TurboToys.Pages.Admin.IndexModel.StatusName(r.Status)</span></td>
+                        <td data-label="Strecke">@r.Track.Name</td>
+                        <td data-label="Spieler" class="mat-num mat-mono">@r.Humans</td>
+                        <td data-label="Bots" class="mat-num mat-mono">@r.Seats.Count(s => s.Kind == TurboToys.Game.SeatKind.Bot)</td>
+                    </tr>
+                }
+            </tbody>
+        </md-table>
+    }
+</section>
+
+<section class="mat-card tt-gap">
+    <div class="mat-card__head"><h2 class="mat-card__title">Die Besten</h2></div>
+    @if (Model.Numbers.Top.Count == 0)
+    {
+        <div class="mat-card__body"><p class="mat-muted">Noch niemand in der Rangliste – Gäste zählen nicht.</p></div>
+    }
+    else
+    {
+        <md-table caption="Die Besten">
+            <thead>
+                <tr><th scope="col" class="mat-num">#</th><th scope="col">Spieler</th><th scope="col" class="mat-num">Level</th><th scope="col" class="mat-num">XP</th><th scope="col" class="mat-num">Siege</th><th scope="col" class="mat-num mat-hide-sm">Podium</th><th scope="col" class="mat-num mat-hide-sm">Abschüsse</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var p in Model.Numbers.Top)
+                {
+                    <tr>
+                        <td data-label="#" class="mat-num"><span class="tt-place tt-place--@p.Rank">@p.Rank</span></td>
+                        <td data-label="Spieler"><a href="/Admin/TurboToys/Players/Edit?id=@p.Id">@p.Name</a></td>
+                        <td data-label="Level" class="mat-num mat-mono">@p.Level</td>
+                        <td data-label="XP" class="mat-num mat-mono">@p.Xp</td>
+                        <td data-label="Siege" class="mat-num mat-mono">@p.RacesWon</td>
+                        <td data-label="Podium" class="mat-num mat-mono mat-hide-sm">@p.Podiums</td>
+                        <td data-label="Abschüsse" class="mat-num mat-mono mat-hide-sm">@p.Kills</td>
+                    </tr>
+                }
+            </tbody>
+        </md-table>
+    }
+</section>
+
+<div class="mat-actions tt-gap">
+    <a class="mat-btn mat-btn--primary" href="/turbotoys/" target="_blank" rel="noopener">@Ui.Icon("external-link")<span>Spiel öffnen</span></a>
+</div>

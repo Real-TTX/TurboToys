@@ -1,0 +1,49 @@
+@page "/Admin/TurboToys/Cars"
+@model TurboToys.Pages.Admin.Cars.IndexModel
+@{
+    ViewData["Title"] = "Autos";
+    ViewData["Crumbs"] = new List<(string, string?)> { ("Administration", "/Admin"), ("TurboToys", "/Admin/TurboToys"), ("Autos", null) };
+}
+<partial name="_Assets" />
+
+<div class="mat-list">
+    <partial name="_Toolbar" model="Model.Toolbar" />
+
+    @if (Model.Items.Count == 0)
+    {
+        <partial name="_Empty" model="@(new EmptyStateModel("car", Model.Toolbar.Total == 0 ? "Der Autohändler ist leer" : "Kein Auto gefunden", Model.Toolbar.Total == 0 ? "Ohne Autos kein Rennen. Lege das erste an." : "Ändere die Suche oder die Filter.", Model.Toolbar.Total == 0, "/Admin/TurboToys/Cars/Edit", "Neues Auto", Model.Toolbar.UrlReset()))" />
+    }
+    else
+    {
+        <md-table caption="Autos">
+            <thead>
+                <tr><th scope="col" class="mat-num mat-hide-sm">#</th><th scope="col">Auto</th><th scope="col">Karosserie</th><th scope="col">Antrieb</th><th scope="col" class="mat-num">Tempo</th><th scope="col" class="mat-num mat-hide-sm">Beschl.</th><th scope="col" class="mat-num mat-hide-sm">Grip</th><th scope="col" class="mat-num mat-hide-sm">Panzer</th><th scope="col" class="mat-num">Preis</th><th scope="col" class="mat-num">Level</th><th scope="col">Status</th><th scope="col"><span class="mat-sr-only">Aktionen</span></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var c in Model.Items)
+                {
+                    <tr>
+                        <td data-label="#" class="mat-num mat-mono mat-hide-sm">@c.SortOrder</td>
+                        <td data-label="Auto"><span class="tt-swatch" style="background:@c.DefaultPaint"></span><a href="/Admin/TurboToys/Cars/Edit?id=@c.Id">@c.Name</a></td>
+                        <td data-label="Karosserie">@ContentLogic.BodyName(c.Body)</td>
+                        <td data-label="Antrieb">@ContentLogic.DriveName(c.Drive)</td>
+                        <td data-label="Tempo" class="mat-num mat-mono">@c.Speed</td>
+                        <td data-label="Beschl." class="mat-num mat-mono mat-hide-sm">@c.Acceleration</td>
+                        <td data-label="Grip" class="mat-num mat-mono mat-hide-sm">@c.Grip</td>
+                        <td data-label="Panzer" class="mat-num mat-mono mat-hide-sm">@c.Armor</td>
+                        <td data-label="Preis" class="mat-num mat-mono">@(c.Price == 0 ? "gratis" : c.Price.ToString())</td>
+                        <td data-label="Level" class="mat-num mat-mono">@c.UnlockLevel</td>
+                        <td data-label="Status">@if (c.IsEnabled) { <span class="mat-pill mat-pill--ok">Im Handel</span> } else { <span class="mat-pill mat-pill--plain">Aus</span> }</td>
+                        <td class="mat-table__cell-actions"><div class="mat-table__actions"><a class="mat-btn mat-btn--ghost mat-btn--icon mat-btn--sm" href="/Admin/TurboToys/Cars/Edit?id=@c.Id" aria-label="@c.Name bearbeiten" data-tip="Bearbeiten">@Ui.Icon("edit")</a></div></td>
+                    </tr>
+                }
+            </tbody>
+        </md-table>
+    }
+
+    <partial name="_Pager" model="Model.Pager" />
+
+    <div class="mat-actions">
+        <a class="mat-btn mat-btn--primary" href="/Admin/TurboToys/Cars/Edit">@Ui.Icon("plus")<span>Neues Auto</span></a>
+    </div>
+</div>

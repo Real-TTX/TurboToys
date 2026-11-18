@@ -1,0 +1,15 @@
+**/bin/
+**/obj/
+**/.vs/
+**/.idea/
+**/.vscode/
+artifacts/
+publish/
+data/
+tmp/
+.git/
+.claude/
+docs/
+tests/
+**/*.user
+**/node_modules/

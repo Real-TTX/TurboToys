@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <!--
+    TurboToys as a plugin of MatGame (../MatGame): the game API (/turbotoys/api), the hub (/turbotoys/hub), the clock of the races,
+    the database schema "turbotoys", the admin pages (/Admin/TurboToys/...) and the player app (wwwroot, served at /turbotoys/).
+  -->
+  <PropertyGroup>
+    <RootNamespace>TurboToys</RootNamespace>
+    <AssemblyName>TurboToys.Module</AssemblyName>
+    <AddRazorSupportForMvc>true</AddRazorSupportForMvc>
+    <MatGameWebUsings>true</MatGameWebUsings>
+    <StaticWebAssetBasePath>turbotoys</StaticWebAssetBasePath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.*" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.*" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.*" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.*">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\MatGame\src\MatGame.Sdk\MatGame.Sdk.csproj" />
+    <ProjectReference Include="..\TurboToys.Core\TurboToys.Core.csproj" />
+  </ItemGroup>
+
+  <!-- the developer previews are not part of the plugin -->
+  <ItemGroup>
+    <Content Remove="wwwroot\dev\**" />
+    <None Include="wwwroot\dev\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="TurboToys.Tests" />
+  </ItemGroup>
+
+</Project>

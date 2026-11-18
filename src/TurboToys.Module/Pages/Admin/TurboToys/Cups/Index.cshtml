@@ -1,0 +1,47 @@
+@page "/Admin/TurboToys/Cups"
+@model TurboToys.Pages.Admin.Cups.IndexModel
+@{
+    ViewData["Title"] = "Pokale";
+    ViewData["Crumbs"] = new List<(string, string?)> { ("Administration", "/Admin"), ("TurboToys", "/Admin/TurboToys"), ("Pokale", null) };
+}
+<partial name="_Assets" />
+
+<div class="mat-list">
+    <partial name="_Toolbar" model="Model.Toolbar" />
+
+    @if (Model.Items.Count == 0)
+    {
+        <partial name="_Empty" model="@(new EmptyStateModel("trophy", Model.Toolbar.Total == 0 ? "Noch keine Pokale" : "Kein Pokal gefunden", Model.Toolbar.Total == 0 ? "Ein Pokal sind mehrere Rennen gegen dieselben Gegner. Lege den ersten an." : "Ändere die Suche oder die Filter.", Model.Toolbar.Total == 0, "/Admin/TurboToys/Cups/Edit", "Neuer Pokal", Model.Toolbar.UrlReset()))" />
+    }
+    else
+    {
+        <md-table caption="Pokale">
+            <thead>
+                <tr><th scope="col" class="mat-num mat-hide-sm">#</th><th scope="col">Pokal</th><th scope="col" class="mat-num">Rennen</th><th scope="col" class="mat-num">Gegner</th><th scope="col" class="mat-num mat-hide-sm">Stärke</th><th scope="col" class="mat-num">Startgeld</th><th scope="col" class="mat-num">Preis</th><th scope="col" class="mat-num">Level</th><th scope="col">Status</th><th scope="col"><span class="mat-sr-only">Aktionen</span></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var c in Model.Items)
+                {
+                    <tr>
+                        <td data-label="#" class="mat-num mat-mono mat-hide-sm">@c.SortOrder</td>
+                        <td data-label="Pokal"><a href="/Admin/TurboToys/Cups/Edit?id=@c.Id">@c.Name</a></td>
+                        <td data-label="Rennen" class="mat-num mat-mono">@c.TrackIdList().Count</td>
+                        <td data-label="Gegner" class="mat-num mat-mono">@c.Opponents</td>
+                        <td data-label="Stärke" class="mat-num mat-mono mat-hide-sm">@c.BotSkill</td>
+                        <td data-label="Startgeld" class="mat-num mat-mono">@c.EntryFee</td>
+                        <td data-label="Preis" class="mat-num mat-mono">@c.Prize</td>
+                        <td data-label="Level" class="mat-num mat-mono">@c.UnlockLevel</td>
+                        <td data-label="Status">@if (c.IsEnabled) { <span class="mat-pill mat-pill--ok">Offen</span> } else { <span class="mat-pill mat-pill--plain">Aus</span> }</td>
+                        <td class="mat-table__cell-actions"><div class="mat-table__actions"><a class="mat-btn mat-btn--ghost mat-btn--icon mat-btn--sm" href="/Admin/TurboToys/Cups/Edit?id=@c.Id" aria-label="@c.Name bearbeiten" data-tip="Bearbeiten">@Ui.Icon("edit")</a></div></td>
+                    </tr>
+                }
+            </tbody>
+        </md-table>
+    }
+
+    <partial name="_Pager" model="Model.Pager" />
+
+    <div class="mat-actions">
+        <a class="mat-btn mat-btn--primary" href="/Admin/TurboToys/Cups/Edit">@Ui.Icon("plus")<span>Neuer Pokal</span></a>
+    </div>
+</div>

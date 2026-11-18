@@ -1,0 +1,62 @@
+@page "/Admin/TurboToys/Cups/Edit"
+@model TurboToys.Pages.Admin.Cups.EditModel
+@{
+    ViewData["Title"] = Model.IsNew ? "Neuer Pokal" : Model.Name;
+    ViewData["Crumbs"] = new List<(string, string?)> { ("Administration", "/Admin"), ("TurboToys", "/Admin/TurboToys"), ("Pokale", "/Admin/TurboToys/Cups"), (Model.IsNew ? "Neu" : Model.Name, null) };
+    ViewData["Width"] = "narrow";
+}
+<partial name="_Assets" />
+
+<form class="mat-form" method="post" novalidate>
+    <partial name="_FormSummary" model="ViewData.ModelState" />
+
+    <div data-tabs>
+        <md-tab-group label="Bereiche des Pokals">
+            <md-tab-button panel="cup-general" icon="trophy" active="true">Allgemein</md-tab-button>
+            <md-tab-button panel="cup-tracks" icon="track">Strecken</md-tab-button>
+            <md-tab-button panel="cup-rules" icon="coin">Regeln &amp; Preis</md-tab-button>
+        </md-tab-group>
+
+        <md-tab-panel id="cup-general" active="true">
+            <div class="mat-card">
+                <div class="mat-card__body mat-form">
+                    <md-field name="Name" label="Name" required value="@Model.Name" maxlength="60" />
+                    <md-field name="Description" kind="textarea" label="Beschreibung" value="@Model.Description" maxlength="400" rows="2" optional="true" />
+                    <md-field name="UnlockLevel" kind="number" label="Ab Level" required value="@Model.UnlockLevel" min="1" max="50" />
+                    <md-field name="SortOrder" kind="number" label="Reihenfolge" required value="@Model.SortOrder" />
+                    <md-field name="IsEnabled" kind="switch" label="Offen" value="@Model.IsEnabled.ToString()" />
+                </div>
+            </div>
+        </md-tab-panel>
+
+        <md-tab-panel id="cup-tracks">
+            <div class="mat-card">
+                <div class="mat-card__head"><h2 class="mat-card__title">Rennen in dieser Reihenfolge</h2></div>
+                <div class="mat-card__body mat-form mat-grid mat-grid--2">
+                    @for (var i = 0; i < TurboToys.Pages.Admin.Cups.EditModel.Slots; i++)
+                    {
+                        <md-field name="@($"Track{i + 1}")" kind="select" label="@($"Rennen {i + 1}")" value="@(Model.TrackAt(i))" options="Model.TrackChoices" optional="@(i > 0)" />
+                    }
+                    <md-field name="Laps" kind="number" label="Runden pro Rennen" required value="@Model.Laps" min="1" max="9" />
+                </div>
+            </div>
+        </md-tab-panel>
+
+        <md-tab-panel id="cup-rules">
+            <div class="mat-card">
+                <div class="mat-card__body mat-form mat-grid mat-grid--2">
+                    <md-field name="Opponents" kind="number" label="Gegner (Bots)" required value="@Model.Opponents" min="1" max="7" />
+                    <md-field name="BotSkill" kind="number" label="Stärke der Gegner (1–5)" required value="@Model.BotSkill" min="1" max="5" hint="Bessere Autos und mehr Tuning." />
+                    <md-field name="EntryFee" kind="number" label="Startgeld (Schrauben)" required value="@Model.EntryFee" min="0" />
+                    <md-field name="Prize" kind="number" label="Preisgeld (Schrauben)" required value="@Model.Prize" min="0" hint="Platz 1 bekommt alles, Platz 2 die Hälfte, Platz 3 ein Viertel." />
+                </div>
+                <div class="mat-card__body">
+                    <p class="mat-muted">Punkte pro Rennen: @string.Join(" · ", CupRules.Points)</p>
+                </div>
+            </div>
+        </md-tab-panel>
+    </div>
+
+    <md-buttons save="@(Model.IsNew ? "Anlegen" : "Speichern")" back="/Admin/TurboToys/Cups" delete-handler="@(Model.IsNew ? null : "Delete")" delete-label="Löschen"
+                delete-confirm="@($"„{Model.Name}“ löschen? Laufende Pokale der Spieler enden damit.")" />
+</form>

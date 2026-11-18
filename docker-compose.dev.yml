@@ -1,0 +1,35 @@
+# TurboToys - Nightly (branch dev, image :nightly)
+#   docker compose -f docker-compose.dev.yml up -d        ->  http://localhost:2773/turbotoys/
+# A MatGame server with only TurboToys. The first account that registers is the administrator (Administration: /Admin).
+name: turbotoys-dev
+
+services:
+  web:
+    image: ghcr.io/real-ttx/turbotoys:nightly
+    restart: unless-stopped
+    ports:
+      - "2773:2773"
+    volumes:
+      - web-data:/data
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: matgame
+      POSTGRES_USER: matgame
+      POSTGRES_PASSWORD: matgame
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U matgame -d matgame"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  web-data:
+  db-data:

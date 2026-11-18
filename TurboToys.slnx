@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/TurboToys.Core/TurboToys.Core.csproj" />
+    <Project Path="src/TurboToys.Module/TurboToys.Module.csproj" />
+    <Project Path="src/TurboToys.Local/TurboToys.Local.csproj" />
+    <Project Path="src/TurboToys.App/TurboToys.App.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/TurboToys.Tests/TurboToys.Tests.csproj" />
+  </Folder>
+</Solution>

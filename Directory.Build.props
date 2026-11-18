@@ -1,0 +1,44 @@
+<Project>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <Deterministic>true</Deterministic>
+    <Company>Matthias Schmoldt</Company>
+    <Product>TurboToys</Product>
+    <Authors>Matthias Schmoldt</Authors>
+    <!-- the master the apps play on by default (MatGame); the app shell reads it, players can choose another one in the game -->
+    <MatGameDefaultServer>https://games.matthix.de</MatGameDefaultServer>
+  </PropertyGroup>
+
+  <!-- Versioning (single source of truth: Major/Minor below). CI overrides Channel / BuildNumber / BuildDate:
+         release : <major>.<minor>.<build>-<date>   e.g. 0.1.42-20261118   (branch main)
+         nightly : nightly-<build>-<date>                                  (branch dev)
+         local   : local-<date>                                            (everything else, the local stack) -->
+  <PropertyGroup>
+    <TurboToysMajor>0</TurboToysMajor>
+    <TurboToysMinor>1</TurboToysMinor>
+
+    <BuildNumber Condition="'$(BuildNumber)' == ''">0</BuildNumber>
+    <Channel Condition="'$(Channel)' == ''">local</Channel>
+    <BuildDate Condition="'$(BuildDate)' == ''">$([System.DateTime]::UtcNow.ToString('yyyyMMdd'))</BuildDate>
+
+    <Version>$(TurboToysMajor).$(TurboToysMinor).$(BuildNumber)</Version>
+    <AssemblyVersion>$(TurboToysMajor).$(TurboToysMinor).0.0</AssemblyVersion>
+    <FileVersion>$(TurboToysMajor).$(TurboToysMinor).0.0</FileVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Channel)' == 'release'">
+    <InformationalVersion>$(TurboToysMajor).$(TurboToysMinor).$(BuildNumber)-$(BuildDate)</InformationalVersion>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Channel)' == 'nightly'">
+    <InformationalVersion>nightly-$(BuildNumber)-$(BuildDate)</InformationalVersion>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Channel)' == 'local'">
+    <InformationalVersion>local-$(BuildDate)</InformationalVersion>
+  </PropertyGroup>
+
+</Project>

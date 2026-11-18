@@ -1,0 +1,10 @@
+/* TurboToys · the few extras of its admin pages (MatUi does the rest) */
+.tt-gap { margin-top: var(--mat-space-5, 20px); }
+.tt-swatch { display: inline-block; width: 14px; height: 14px; border-radius: 4px; border: 1px solid rgba(0, 0, 0, .25); vertical-align: -2px; margin-right: 6px; }
+.tt-bars { display: grid; grid-template-columns: 7.5em 1fr 2.5em; gap: 4px 10px; align-items: center; font-size: .9em; }
+.tt-bars i { display: block; height: 8px; border-radius: 4px; background: var(--mat-accent, #e2392f); }
+.tt-bars span:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+.tt-place { display: inline-grid; place-items: center; width: 1.8em; height: 1.8em; border-radius: 50%; font-weight: 700; background: var(--mat-surface-2, #eee); }
+.tt-place--1 { background: #f6c638; color: #14100c; }
+.tt-place--2 { background: #c9d1d9; color: #14100c; }
+.tt-place--3 { background: #d99a5b; color: #14100c; }

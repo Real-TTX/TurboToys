@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="de" data-app="turbotoys">
+<head>
+    <meta charset="utf-8" />
+    <!-- one static page: served by the plugin at /turbotoys/ (with the version filled in) and by the app shell from its own files -->
+    <base href="/turbotoys/" />
+    <meta name="matgame-game" content="turbotoys" />
+    <meta name="matgame-version" content="" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#e2392f" />
+    <meta name="description" content="TurboToys – ferngesteuerte Autos im Comic-Look: Elektro, Benzin und Turbo, Waffen, Tuning und Pokale." />
+    <title>TurboToys</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="img/apple-touch-icon.png" />
+    <link rel="preload" href="fonts/bangers-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="fonts/nunito-latin-800-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="css/play.css" />
+    <link rel="stylesheet" href="css/comic.css" />
+    <script type="importmap">{ "imports": { "three": "./lib/three/three.module.js" } }</script>
+    <script src="lib/signalr/signalr.min.js" defer></script>
+</head>
+<body data-screen="boot">
+    <!-- the 3D picture fills the window; everything else lies on top of it -->
+    <div id="tt-stage" class="stage" aria-hidden="true"></div>
+    <div id="tt-hit" class="hit-flash" aria-hidden="true"></div>
+    <div id="tt-comic" class="comic-layer" aria-hidden="true"></div>
+    <div id="tt-hud" class="hud" hidden></div>
+    <header id="tt-top" class="top" hidden></header>
+    <main id="tt-menu" class="menu" hidden></main>
+    <div id="tt-results" class="results-layer" hidden></div>
+    <div id="tt-loading" class="loading-layer" hidden><div class="burst-loader"><span>LÄDT …</span></div></div>
+    <div id="tt-toasts" class="toasts" aria-live="polite"></div>
+    <div id="tt-boot" class="boot"><img src="img/logo/turbotoys-logo-dark.svg" alt="TurboToys" /><span>Motor wird vorgewärmt …</span></div>
+    <noscript>TurboToys braucht JavaScript und WebGL.</noscript>
+    <script type="module" src="js/game/main.js"></script>
+</body>
+</html>

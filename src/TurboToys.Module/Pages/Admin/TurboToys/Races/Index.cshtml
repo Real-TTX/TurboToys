@@ -1,0 +1,42 @@
+@page "/Admin/TurboToys/Races"
+@model TurboToys.Pages.Admin.Races.IndexModel
+@{
+    ViewData["Title"] = "Rennen";
+    ViewData["Crumbs"] = new List<(string, string?)> { ("Administration", "/Admin"), ("TurboToys", "/Admin/TurboToys"), ("Rennen", null) };
+}
+<partial name="_Assets" />
+
+<div class="mat-list">
+    <partial name="_Toolbar" model="Model.Toolbar" />
+
+    @if (Model.Items.Count == 0)
+    {
+        <partial name="_Empty" model="@(new EmptyStateModel("flag", Model.Toolbar.Total == 0 ? "Noch keine Rennen" : "Kein Rennen gefunden", Model.Toolbar.Total == 0 ? "Sobald jemand fährt, steht das Rennen hier." : "Ändere die Suche oder die Filter.", Model.Toolbar.Total == 0, null, null, Model.Toolbar.UrlReset()))" />
+    }
+    else
+    {
+        <md-table caption="Rennen">
+            <thead>
+                <tr><th scope="col">Rennen</th><th scope="col">Art</th><th scope="col">Status</th><th scope="col" class="mat-hide-sm">Strecke</th><th scope="col" class="mat-num">Fahrer</th><th scope="col" class="mat-num mat-hide-sm">Bots</th><th scope="col">Sieger</th><th scope="col" class="mat-hide-sm">Start</th><th scope="col"><span class="mat-sr-only">Aktionen</span></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var r in Model.Items)
+                {
+                    <tr>
+                        <td data-label="Rennen"><a href="/Admin/TurboToys/Races/Edit?id=@r.Id">@r.Name</a></td>
+                        <td data-label="Art">@RaceLogic.KindName(r.Kind)</td>
+                        <td data-label="Status"><span class="mat-pill @(r.Status switch { RaceStatus.Finished => "mat-pill--ok", RaceStatus.Running => "mat-pill--warn", _ => "mat-pill--plain" })">@RaceLogic.StatusName(r.Status)</span></td>
+                        <td data-label="Strecke" class="mat-hide-sm">@r.TrackName</td>
+                        <td data-label="Fahrer" class="mat-num mat-mono">@r.Humans</td>
+                        <td data-label="Bots" class="mat-num mat-mono mat-hide-sm">@r.Bots</td>
+                        <td data-label="Sieger">@(r.Winner ?? "–")</td>
+                        <td data-label="Start" class="mat-mono mat-hide-sm">@Ui.Stamp(r.StartDate)</td>
+                        <td class="mat-table__cell-actions"><div class="mat-table__actions"><a class="mat-btn mat-btn--ghost mat-btn--icon mat-btn--sm" href="/Admin/TurboToys/Races/Edit?id=@r.Id" aria-label="@r.Name ansehen" data-tip="Ansehen">@Ui.Icon("eye")</a></div></td>
+                    </tr>
+                }
+            </tbody>
+        </md-table>
+    }
+
+    <partial name="_Pager" model="Model.Pager" />
+</div>

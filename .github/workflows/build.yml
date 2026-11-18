@@ -1,0 +1,248 @@
+name: build
+
+# TurboToys is a plugin of MatGame (Real-TTX/MatGame). This workflow
+#   build   – builds and tests the game (Core, Module, Local, App) against the MatGame SDK of the same branch, checks the scripts of the player app,
+#             then tells MatGame to build its image with every game (main -> :latest, dev -> :nightly)
+#   docker  – the own image of TurboToys (MatGame host with only TurboToys, port 2773): ghcr.io/real-ttx/turbotoys
+#             main -> <major>.<minor>.<build>-<date>, latest, release   |   dev -> nightly-<build>-<date>, nightly   |   other branches -> local-<date>-<build> (no push)
+#   windows – the Windows app (TurboToys.exe + turbotoys-update.json) in the rolling release release-channel (main) / nightly-channel (dev)
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_VERSION: '10.0.x'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      channel: ${{ steps.ver.outputs.channel }}
+      date: ${{ steps.ver.outputs.date }}
+      build: ${{ steps.ver.outputs.build }}
+      matgame: ${{ steps.matgame.outputs.ref }}
+
+    steps:
+      # the repositories side by side, as the project references expect them (../MatGame/src/MatGame.Sdk)
+      - uses: actions/checkout@v4
+        with:
+          path: TurboToys
+
+      - name: MatGame of the same branch (main otherwise)
+        id: matgame
+        shell: bash
+        run: |
+          branch="${GITHUB_BASE_REF:-$GITHUB_REF_NAME}"
+          if git ls-remote --exit-code --heads https://github.com/Real-TTX/MatGame.git "$branch" > /dev/null; then ref="$branch"; else ref=main; fi
+          git clone --depth 1 --branch "$ref" https://github.com/Real-TTX/MatGame.git MatGame
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "MatGame: $ref ($(git -C MatGame rev-parse --short HEAD))" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      # main -> release (<major>.<minor>.<run number>-<date>), dev -> nightly (nightly-<run number>-<date>), everything else -> local.
+      - name: Determine version metadata
+        id: ver
+        shell: bash
+        run: |
+          case "${GITHUB_REF_NAME}" in
+            main) channel=release ;;
+            dev)  channel=nightly ;;
+            *)    channel=local ;;
+          esac
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then channel=local; fi
+          {
+            echo "channel=$channel"
+            echo "date=$(date -u +%Y%m%d)"
+            echo "build=${GITHUB_RUN_NUMBER}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Restore
+        working-directory: TurboToys
+        run: dotnet restore TurboToys.slnx
+
+      - name: Build
+        working-directory: TurboToys
+        run: >
+          dotnet build TurboToys.slnx -c Release --no-restore
+          -p:Channel=${{ steps.ver.outputs.channel }}
+          -p:BuildNumber=${{ steps.ver.outputs.build }}
+          -p:BuildDate=${{ steps.ver.outputs.date }}
+
+      - name: Test
+        working-directory: TurboToys
+        run: dotnet test TurboToys.slnx -c Release --no-build --verbosity normal --logger GitHubActions
+
+      - name: Check the scripts of the game
+        working-directory: TurboToys
+        shell: bash
+        run: |
+          find src/TurboToys.Module/wwwroot/js -name '*.js' -print0 | while IFS= read -r -d '' f; do
+            node --check --input-type=module < "$f" || { echo "::error file=$f::syntax error"; exit 1; }
+          done
+          node -e "JSON.parse(require('fs').readFileSync('src/TurboToys.Module/wwwroot/data/layouts.json','utf8'))"
+
+      - name: The copy of the MatGame SDK is unchanged
+        working-directory: TurboToys
+        shell: bash
+        run: |
+          cd src/TurboToys.Module/wwwroot/js/matgame
+          tail -n +2 matgame.version | sha256sum --check --quiet
+
+      # MatGame builds its image with every game. The GITHUB_TOKEN may not start workflows of another repository:
+      # set the secret MATGAME_DISPATCH_TOKEN (a token with "contents: write" on Real-TTX/MatGame) to start it from here.
+      - name: Tell MatGame
+        if: github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'dev')
+        env:
+          TOKEN: ${{ secrets.MATGAME_DISPATCH_TOKEN }}
+        shell: bash
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "MATGAME_DISPATCH_TOKEN is not set: MatGame picks the change up with its next scheduled build." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          curl -fsS -X POST https://api.github.com/repos/Real-TTX/MatGame/dispatches \
+            -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github+json" \
+            -d "{\"event_type\":\"game-updated\",\"client_payload\":{\"game\":\"turbotoys\",\"branch\":\"${GITHUB_REF_NAME}\",\"sha\":\"${GITHUB_SHA}\"}}"
+          echo "MatGame was told to build (${GITHUB_REF_NAME})." >> "$GITHUB_STEP_SUMMARY"
+
+  # The own image of TurboToys (the MatGame host with only this game, port 2773) for every branch, tagged by the versioning of the channel.
+  docker:
+    name: Docker-Image
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: TurboToys
+
+      - uses: actions/checkout@v4
+        with:
+          repository: Real-TTX/MatGame
+          ref: ${{ needs.build.outputs.matgame }}
+          path: MatGame
+
+      - name: Version and tags
+        id: tags
+        shell: bash
+        run: |
+          image="ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
+          channel="${{ needs.build.outputs.channel }}"
+          build="${{ needs.build.outputs.build }}"
+          date="${{ needs.build.outputs.date }}"
+          major=$(sed -n 's:.*<TurboToysMajor>\(.*\)</TurboToysMajor>.*:\1:p' TurboToys/Directory.Build.props)
+          minor=$(sed -n 's:.*<TurboToysMinor>\(.*\)</TurboToysMinor>.*:\1:p' TurboToys/Directory.Build.props)
+          case "$channel" in
+            release) version="$major.$minor.$build-$date"; tags="$image:$version"$'\n'"$image:latest"$'\n'"$image:release" ;;
+            nightly) version="nightly-$build-$date"; tags="$image:$version"$'\n'"$image:nightly" ;;
+            *)       version="local-$date"; tags="$image:$version-$build" ;;
+          esac
+          {
+            echo "version=$version"
+            echo "tags<<TAGS"
+            echo "$tags"
+            echo "TAGS"
+          } >> "$GITHUB_OUTPUT"
+          printf '### Image\n\n- version: `%s`\n- MatGame: `%s`\n' "$version" "${{ needs.build.outputs.matgame }}" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: TurboToys
+          build-contexts: |
+            matgame=MatGame
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          build-args: |
+            Channel=${{ needs.build.outputs.channel }}
+            BuildNumber=${{ needs.build.outputs.build }}
+            BuildDate=${{ needs.build.outputs.date }}
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # The Windows app (MatGame shell + the player app + the offline game TurboToys.Local): one self-installing TurboToys.exe and its manifest in the rolling release of the
+  # channel (release-channel from main, nightly-channel from dev); installed apps find it there and update themselves (MatGame.Shell.Updater).
+  windows:
+    name: Windows-App
+    needs: build
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: TurboToys auschecken
+        uses: actions/checkout@v4
+        with:
+          path: TurboToys
+
+      - name: MatGame auschecken
+        uses: actions/checkout@v4
+        with:
+          repository: Real-TTX/MatGame
+          ref: ${{ needs.build.outputs.matgame }}
+          path: MatGame
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: App veröffentlichen
+        id: app
+        working-directory: TurboToys
+        run: |
+          if [ "${{ github.ref_name }}" = "main" ]; then channel=release; else channel=nightly; fi
+          build=${{ github.run_number }}
+          date=$(date -u +%Y%m%d)
+          dotnet publish src/TurboToys.App -c Release -r win-x64 -p:Channel=$channel -p:BuildNumber=$build -p:BuildDate=$date -o out
+          major=$(sed -n 's:.*<TurboToysMajor>\(.*\)</TurboToysMajor>.*:\1:p' Directory.Build.props)
+          minor=$(sed -n 's:.*<TurboToysMinor>\(.*\)</TurboToysMinor>.*:\1:p' Directory.Build.props)
+          if [ "$channel" = "release" ]; then version="$major.$minor.$build-$date"; else version="nightly-$build-$date"; fi
+          sha=$(sha256sum out/TurboToys.exe | cut -d' ' -f1)
+          printf '{"version":"%s","channel":"%s","buildNumber":%s,"setup":"TurboToys.exe","sha256":"%s"}\n' "$version" "$channel" "$build" "$sha" > out/turbotoys-update.json
+          cat out/turbotoys-update.json
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: In den Kanal-Release laden
+        working-directory: TurboToys
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ steps.app.outputs.channel }}-channel"
+          pre=""; if [ "${{ steps.app.outputs.channel }}" = "nightly" ]; then pre="--prerelease"; fi
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --target "${{ github.sha }}" $pre --title "TurboToys für Windows (${{ steps.app.outputs.channel }})" \
+            --notes "Die Windows-App von TurboToys. TurboToys.exe herunterladen und starten: sie installiert sich selbst (ohne Administrator) und hält sich aktuell."
+          gh release upload "$tag" out/TurboToys.exe out/turbotoys-update.json --clobber
+          gh release edit "$tag" --notes "Die Windows-App von TurboToys, Version ${{ steps.app.outputs.version }}. TurboToys.exe herunterladen und starten: sie installiert sich selbst (ohne Administrator) und hält sich aktuell."

@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="utf-8" />
+    <!-- developer preview of the synthesized sounds and the driver portraits: dev/sound-avatar.html?view=all|faces|matrix|random|sound -->
+    <base href="/turbotoys/" />
+    <title>TurboToys · Sound &amp; Avatare</title>
+    <style>
+        @font-face { font-family: Bangers; src: url(fonts/bangers-latin-400-normal.woff2) format('woff2'); }
+        body { margin: 0; padding: 12px 16px; background: #fff4dc; color: #14100c; font: 14px/1.35 sans-serif; }
+        h2 { font: 26px Bangers, sans-serif; letter-spacing: 1px; margin: 14px 0 6px; }
+        button { font: 13px sans-serif; padding: 4px 9px; margin: 2px; border: 2px solid #14100c; border-radius: 7px; background: #ffd23f; cursor: pointer; box-shadow: 2px 2px 0 #14100c; }
+        button:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 #14100c; }
+        .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+        .engines { display: flex; gap: 14px; flex-wrap: wrap; }
+        .engine { border: 2px solid #14100c; border-radius: 8px; padding: 6px 10px; background: #fff; }
+        .engine label { display: grid; grid-template-columns: 60px 130px; align-items: center; font-size: 12px; }
+        table.grid td { text-align: center; font-size: 11px; padding: 2px; }
+        table.grid th { font-size: 11px; padding: 2px 4px; }
+        #info { position: fixed; right: 8px; bottom: 8px; max-width: 520px; max-height: 40vh; overflow: auto; white-space: pre; font: 11px monospace; background: rgba(0,0,0,.75); color: #fff; padding: 6px 8px; border-radius: 6px; }
+        .small img { margin: 2px; }
+    </style>
+</head>
+<body>
+<div id="info">lädt …</div>
+
+<section id="sound">
+    <h2>Sound</h2>
+    <div class="row">
+        <label><input type="checkbox" id="on" /> Ton an</label>
+        <label>Lautstärke <input type="range" id="vol" min="0" max="1" step="0.01" /></label>
+        <label>Musik <input type="range" id="mvol" min="0" max="1" step="0.01" /></label>
+        <button data-music="menu">Musik: Menü</button><button data-music="race">Musik: Rennen</button><button data-music="">Musik aus</button>
+    </div>
+    <div class="row" id="sounds"></div>
+    <div class="engines" id="engines"></div>
+</section>
+
+<section id="faces"><h2>Gesichter × Frisuren/Helme</h2><table class="grid" id="faceGrid"></table></section>
+<section id="matrix"><h2>Frisur × Helm</h2><table class="grid" id="matrixGrid"></table></section>
+<section id="random"><h2>Zufall (40 px und 64 px)</h2><div class="small" id="randomGrid"></div></section>
+
+<script type="module">
+    import { audio } from './js/game/audio.js';
+    import { avatarSvg, avatarUrl, AVATAR_LABELS } from './js/game/avatar.js';
+
+    const q = new URLSearchParams(location.search);
+    const view = q.get('view') ?? 'all';
+    if (q.get('check') === '0') document.getElementById('info').hidden = true;
+    for (const id of ['sound', 'faces', 'matrix', 'random']) document.getElementById(id).hidden = view !== 'all' && view !== id;
+    const $ = id => document.getElementById(id);
+
+    // ------------------------------------------------ sound controls
+    $('on').checked = audio.enabled;
+    $('vol').value = audio.volume;
+    $('mvol').value = audio.musicVolume;
+    document.addEventListener('pointerdown', () => audio.unlock(), { capture: true });
+    $('on').onchange = e => audio.setEnabled(e.target.checked);
+    $('vol').oninput = e => audio.setVolume(+e.target.value);
+    $('mvol').oninput = e => audio.setMusicVolume(+e.target.value);
+    for (const b of document.querySelectorAll('[data-music]')) b.onclick = () => { audio.unlock(); audio.music(b.dataset.music || null); };
+    const names = ['mg', 'rocket', 'explosion', 'small-explosion', 'mine-drop', 'oil', 'shock', 'shield', 'pickup', 'repair', 'turbo', 'backfire', 'crash', 'scrape', 'land',
+        'countdown', 'go', 'lap', 'final-lap', 'finish', 'win', 'lose', 'click', 'hover', 'buy', 'upgrade', 'error', 'wreck'];
+    for (const n of names) {
+        const b = document.createElement('button');
+        b.textContent = n;
+        b.onclick = () => { audio.unlock(); audio.play(n); };
+        $('sounds').append(b);
+    }
+    const mgBtn = document.createElement('button');
+    mgBtn.textContent = 'mg ×10/s (1 s)';
+    mgBtn.onclick = () => { audio.unlock(); for (let i = 0; i < 10; i++) setTimeout(() => audio.play('mg', { x: (i - 5) * 6, z: -20 }), i * 100); };
+    $('sounds').append(mgBtn);
+    audio.setListener(0, 0, 0);
+
+    // engines: one panel per drive
+    const engines = [];
+    for (const drive of ['Electric', 'Gas', 'Turbo']) {
+        const box = document.createElement('div');
+        box.className = 'engine';
+        box.innerHTML = `<b>${drive}</b> <button>Start</button><br>`
+            + ['rpm', 'throttle', 'speed', 'boostSpool', 'skid', 'distance'].map(k => `<label>${k}<input type="range" data-k="${k}" min="0" max="${k === 'distance' ? 300 : 1}" step="0.01" value="0"></label>`).join('')
+            + '<label>turbo<input type="checkbox" data-k="turbo"></label><label>airborne<input type="checkbox" data-k="airborne"></label><label>local<input type="checkbox" data-k="local" checked></label>';
+        const e = { drive, box, handle: null };
+        box.querySelector('button').onclick = ev => {
+            audio.unlock();
+            if (e.handle) { e.handle.stop(); e.handle = null; ev.target.textContent = 'Start'; }
+            else { e.handle = audio.engine(drive, { local: box.querySelector('[data-k=local]').checked }); ev.target.textContent = 'Stop'; }
+        };
+        engines.push(e);
+        $('engines').append(box);
+    }
+    (function frame() {
+        for (const e of engines) {
+            if (!e.handle) continue;
+            const p = {};
+            for (const i of e.box.querySelectorAll('[data-k]')) p[i.dataset.k] = i.type === 'checkbox' ? i.checked : +i.value;
+            e.handle.update(p);
+        }
+        requestAnimationFrame(frame);
+    })();
+
+    // ------------------------------------------------ avatars
+    const faces = Object.keys(AVATAR_LABELS.face), hairs = Object.keys(AVATAR_LABELS.hair), helmets = Object.keys(AVATAR_LABELS.helmet);
+    const skins = ['#f7d3b5', '#f2c29b', '#d9a066', '#b5763f', '#8a5230', '#5c3620'];
+    const colors = ['#e8322b', '#1f7ae0', '#2bb24c', '#ff9f1c', '#8e44ec', '#ff4fa3', '#14b8c4', '#ffd23f'];
+    const combos = q.get('combos') ? q.get('combos').split(',').map(c => c.split('.')) : [['spiky', 'none'], ['bob', 'racer'], ['afro', 'cap'], ['quiff', 'goggles'], ['mohawk', 'bandana'], ['ponytail', 'crown'], ['bald', 'viking'], ['afro', 'headset']];
+    let html = '<tr><th></th>' + combos.map(([h, m]) => `<th>${AVATAR_LABELS.hair[h]} / ${AVATAR_LABELS.helmet[m]}</th>`).join('') + '</tr>';
+    faces.forEach((f, i) => {
+        html += `<tr><th>${AVATAR_LABELS.face[f]}</th>` + combos.map(([hair, helmet], j) =>
+            `<td>${avatarSvg({ face: f, hair, helmet, color: colors[(i + j) % colors.length], skin: skins[(i * 3 + j) % skins.length] }, { size: +(q.get('size') ?? 96) })}</td>`).join('') + '</tr>';
+    });
+    $('faceGrid').innerHTML = html;
+
+    html = '<tr><th></th>' + helmets.map(m => `<th>${AVATAR_LABELS.helmet[m]}</th>`).join('') + '</tr>';
+    hairs.forEach((hair, i) => {
+        html += `<tr><th>${AVATAR_LABELS.hair[hair]}</th>` + helmets.map((helmet, j) =>
+            `<td><img src="${avatarUrl({ face: faces[(i + j) % faces.length], hair, helmet, color: colors[(i * 2 + j) % colors.length], skin: skins[(i + j) % skins.length] }, { size: 84 })}" width="84" height="84"></td>`).join('') + '</tr>';
+    });
+    $('matrixGrid').innerHTML = html;
+
+    const rnd = a => a[Math.floor(Math.random() * a.length)];
+    const randomColor = () => '#' + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0');
+    let small = '';
+    for (let i = 0; i < 24; i++) {
+        const look = { face: rnd(faces), hair: rnd(hairs), helmet: rnd(helmets), color: randomColor(), skin: rnd(skins) };
+        small += `<img src="${avatarUrl(look, { size: 40 })}" width="40" height="40" title="${JSON.stringify(look).replace(/"/g, '')}">`;
+    }
+    small += '<br>';
+    for (let i = 0; i < 16; i++) {
+        const look = { face: rnd(faces), hair: rnd(hairs), helmet: rnd(helmets), color: randomColor(), skin: rnd(skins) };
+        small += avatarSvg(look, { size: 64, frame: i % 4 !== 3, background: i % 2 === 0 });
+    }
+    $('randomGrid').innerHTML = small;
+
+    // ------------------------------------------------ offline level check (no user gesture needed)
+    const lines = [];
+    const f = v => v.toFixed(3);
+    if (q.get('check') !== '0') {
+        for (const n of audio._debug.sounds) {
+            const r = await audio._debug.renderSound(n);
+            if (r.rawPeak < 0.01 || r.rms < 0.002) lines.push(`QUIET ${n} peak ${f(r.rawPeak)} rms ${f(r.rms)}`);
+            else lines.push(`${n.padEnd(16)} rawPeak ${f(r.rawPeak)} rms ${f(r.rms)} ${r.duration.toFixed(2)}s`);
+        }
+        const states = { idle: { rpm: 0, throttle: 0 }, full: { rpm: 1, throttle: 1, speed: 1, boostSpool: 1 }, skid: { rpm: 0.5, throttle: 0.5, speed: 0.6, skid: 1 }, turbo: { rpm: 0.8, throttle: 1, speed: 0.8, turbo: true, boostSpool: 0.8 }, far: { rpm: 0.5, throttle: 1, distance: 200, local: false } };
+        for (const d of ['Electric', 'Gas', 'Turbo']) {
+            const parts = [];
+            for (const [k, p] of Object.entries(states)) {
+                const r = await audio._debug.renderEngine(d, p);
+                parts.push(`${k} ${f(r.peak)}/${f(r.rms)}`);
+            }
+            lines.push(`engine ${d.padEnd(8)} ${parts.join('  ')}`);
+        }
+        for (const m of ['menu', 'race']) {
+            const r = await audio._debug.renderMusic(m, 8);
+            lines.push(`music ${m} peak ${f(r.peak)} rms ${f(r.rms)}`);
+        }
+    }
+    $('info').textContent = lines.join('\n') || 'ok';
+    window.__ready = true;
+</script>
+</body>

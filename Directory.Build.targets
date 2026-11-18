@@ -1,0 +1,19 @@
+<Project>
+
+  <!--
+    The class libraries of the web (TurboToys.Module) get the usings the Web SDK brings implicitly: the admin pages
+    and the endpoints rely on them like in every Mat app. A project asks for them with <MatGameWebUsings>true</MatGameWebUsings>.
+  -->
+  <ItemGroup Condition="'$(MatGameWebUsings)' == 'true'">
+    <Using Include="System.Net.Http.Json" />
+    <Using Include="Microsoft.AspNetCore.Builder" />
+    <Using Include="Microsoft.AspNetCore.Hosting" />
+    <Using Include="Microsoft.AspNetCore.Http" />
+    <Using Include="Microsoft.AspNetCore.Routing" />
+    <Using Include="Microsoft.Extensions.Configuration" />
+    <Using Include="Microsoft.Extensions.DependencyInjection" />
+    <Using Include="Microsoft.Extensions.Hosting" />
+    <Using Include="Microsoft.Extensions.Logging" />
+  </ItemGroup>
+
+</Project>

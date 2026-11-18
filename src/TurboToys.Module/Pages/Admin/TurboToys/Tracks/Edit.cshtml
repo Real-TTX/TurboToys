@@ -1,0 +1,41 @@
+@page "/Admin/TurboToys/Tracks/Edit"
+@model TurboToys.Pages.Admin.Tracks.EditModel
+@{
+    ViewData["Title"] = Model.IsNew ? "Neue Strecke" : Model.Name;
+    ViewData["Crumbs"] = new List<(string, string?)> { ("Administration", "/Admin"), ("TurboToys", "/Admin/TurboToys"), ("Strecken", "/Admin/TurboToys/Tracks"), (Model.IsNew ? "Neu" : Model.Name, null) };
+    ViewData["Width"] = "narrow";
+}
+<partial name="_Assets" />
+
+<form class="mat-form" method="post" novalidate>
+    <partial name="_FormSummary" model="ViewData.ModelState" />
+    <div class="mat-card">
+        <div class="mat-card__head"><h2 class="mat-card__title">Strecke</h2></div>
+        <div class="mat-card__body mat-form">
+            <md-field name="Name" label="Name" required value="@Model.Name" maxlength="60" />
+            <md-field name="Description" kind="textarea" label="Beschreibung" value="@Model.Description" maxlength="400" rows="2" optional="true" />
+            <md-field name="Layout" kind="select" label="Welt" value="@Model.Layout" options="Model.Layouts" hint="Die Form der Strecke und die Welt drumherum." />
+            <md-field name="TimeOfDay" kind="radios" label="Tageszeit" value="@Model.TimeOfDay.ToString()" options="Model.Times" />
+        </div>
+    </div>
+
+    <div class="mat-card">
+        <div class="mat-card__head"><h2 class="mat-card__title">Rennen</h2></div>
+        <div class="mat-card__body mat-form mat-grid mat-grid--2">
+            <md-field name="Laps" kind="number" label="Runden" required value="@Model.Laps" min="1" max="9" />
+            <md-field name="UnlockLevel" kind="number" label="Ab Level" required value="@Model.UnlockLevel" min="1" max="50" />
+            <md-field name="SortOrder" kind="number" label="Reihenfolge" required value="@Model.SortOrder" />
+            <md-field name="IsEnabled" kind="switch" label="Offen" value="@Model.IsEnabled.ToString()" />
+        </div>
+    </div>
+
+    @if (!Model.IsNew)
+    {
+        <div class="mat-actions">
+            <a class="mat-btn mat-btn--secondary" href="/turbotoys/dev/world.html?layout=@Model.Layout&time=@Model.TimeOfDay.ToString().ToLowerInvariant()&view=orbit" target="_blank" rel="noopener">@Ui.Icon("eye")<span>Vorschau</span></a>
+        </div>
+    }
+
+    <md-buttons save="@(Model.IsNew ? "Anlegen" : "Speichern")" back="/Admin/TurboToys/Tracks" delete-handler="@(Model.IsNew ? null : "Delete")" delete-label="Löschen"
+                delete-confirm="@($"„{Model.Name}“ löschen? Pokale mit dieser Strecke überspringen sie.")" />
+</form>

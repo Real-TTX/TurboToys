@@ -1,0 +1,35 @@
+# TurboToys - Release (branch main, image :latest)
+#   docker compose up -d        ->  http://localhost:2773/turbotoys/
+# A MatGame server with only TurboToys. The first account that registers is the administrator (Administration: /Admin).
+name: turbotoys
+
+services:
+  web:
+    image: ghcr.io/real-ttx/turbotoys:latest
+    restart: unless-stopped
+    ports:
+      - "2773:2773"
+    volumes:
+      - web-data:/data
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: matgame
+      POSTGRES_USER: matgame
+      POSTGRES_PASSWORD: matgame
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U matgame -d matgame"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  web-data:
+  db-data:

@@ -1,0 +1,46 @@
+@page "/Admin/TurboToys/Weapons"
+@model TurboToys.Pages.Admin.Weapons.IndexModel
+@{
+    ViewData["Title"] = "Waffen";
+    ViewData["Crumbs"] = new List<(string, string?)> { ("Administration", "/Admin"), ("TurboToys", "/Admin/TurboToys"), ("Waffen", null) };
+}
+<partial name="_Assets" />
+
+<div class="mat-list">
+    <partial name="_Toolbar" model="Model.Toolbar" />
+
+    @if (Model.Items.Count == 0)
+    {
+        <partial name="_Empty" model="@(new EmptyStateModel("weapon", Model.Toolbar.Total == 0 ? "Das Arsenal ist leer" : "Keine Waffe gefunden", Model.Toolbar.Total == 0 ? "Ohne Waffen wird es ein friedliches Rennen. Lege die erste an." : "Ändere die Suche oder die Filter.", Model.Toolbar.Total == 0, "/Admin/TurboToys/Weapons/Edit", "Neue Waffe", Model.Toolbar.UrlReset()))" />
+    }
+    else
+    {
+        <md-table caption="Waffen">
+            <thead>
+                <tr><th scope="col" class="mat-num mat-hide-sm">#</th><th scope="col">Waffe</th><th scope="col">Art</th><th scope="col" class="mat-num">Schaden</th><th scope="col" class="mat-num">Pro Kiste</th><th scope="col" class="mat-num mat-hide-sm">Pause</th><th scope="col" class="mat-num mat-hide-sm">Häufigkeit</th><th scope="col">Status</th><th scope="col"><span class="mat-sr-only">Aktionen</span></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var w in Model.Items)
+                {
+                    <tr>
+                        <td data-label="#" class="mat-num mat-mono mat-hide-sm">@w.SortOrder</td>
+                        <td data-label="Waffe"><a href="/Admin/TurboToys/Weapons/Edit?id=@w.Id">@w.Name</a></td>
+                        <td data-label="Art">@ContentLogic.KindName(w.Kind)</td>
+                        <td data-label="Schaden" class="mat-num mat-mono">@w.Damage</td>
+                        <td data-label="Pro Kiste" class="mat-num mat-mono">@(w.Kind == WeaponKind.MachineGun ? "–" : w.Amount.ToString())</td>
+                        <td data-label="Pause" class="mat-num mat-mono mat-hide-sm">@w.CooldownMs ms</td>
+                        <td data-label="Häufigkeit" class="mat-num mat-mono mat-hide-sm">@w.CrateWeight</td>
+                        <td data-label="Status">@if (w.IsEnabled) { <span class="mat-pill mat-pill--ok">Aktiv</span> } else { <span class="mat-pill mat-pill--plain">Aus</span> }</td>
+                        <td class="mat-table__cell-actions"><div class="mat-table__actions"><a class="mat-btn mat-btn--ghost mat-btn--icon mat-btn--sm" href="/Admin/TurboToys/Weapons/Edit?id=@w.Id" aria-label="@w.Name bearbeiten" data-tip="Bearbeiten">@Ui.Icon("edit")</a></div></td>
+                    </tr>
+                }
+            </tbody>
+        </md-table>
+    }
+
+    <partial name="_Pager" model="Model.Pager" />
+
+    <div class="mat-actions">
+        <a class="mat-btn mat-btn--primary" href="/Admin/TurboToys/Weapons/Edit">@Ui.Icon("plus")<span>Neue Waffe</span></a>
+    </div>
+</div>

@@ -1,0 +1,4 @@
+@inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
+@* What every admin page of TurboToys adds to the host's shell: its stylesheet and its own icons (car, trophy, track ...) next to MatUi's. *@
+<link rel="stylesheet" href="~/turbotoys/css/admin.css" asp-append-version="true" />
+@Html.Raw(TurboToys.Web.AdminAssets.Sprite(Env))

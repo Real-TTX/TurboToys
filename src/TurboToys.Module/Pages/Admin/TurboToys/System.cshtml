@@ -1,0 +1,45 @@
+@page "/Admin/TurboToys/System"
+@model TurboToys.Pages.Admin.SystemModel
+@{
+    ViewData["Title"] = "Einstellungen";
+    ViewData["Crumbs"] = new List<(string, string?)> { ("Administration", "/Admin"), ("TurboToys", "/Admin/TurboToys"), ("Einstellungen", null) };
+    ViewData["Width"] = "narrow";
+}
+<partial name="_Assets" />
+
+<form class="mat-form" method="post" novalidate>
+    <partial name="_FormSummary" model="ViewData.ModelState" />
+
+    <div data-tabs>
+        <md-tab-group label="Bereiche der Einstellungen">
+            <md-tab-button panel="system-play" icon="gamepad" active="true">Spiel</md-tab-button>
+            <md-tab-button panel="system-info" icon="info">Info</md-tab-button>
+        </md-tab-group>
+
+        <md-tab-panel id="system-play" active="true">
+            <div class="mat-card">
+                <div class="mat-card__body mat-form">
+                    <md-field name="MaxPlayers" kind="number" label="Höchstens Spieler pro Raum" required value="@Model.MaxPlayers" min="2" max="8" />
+                    <md-field name="StartMoney" kind="number" label="Startgeld neuer Spieler (Schrauben)" required value="@Model.StartMoney" min="0" />
+                    <md-field name="GuestsCreateRooms" kind="switch" label="Gäste dürfen öffentliche Räume eröffnen" value="@Model.GuestsCreateRooms.ToString()" />
+                    <md-field name="Announcement" kind="textarea" label="Ankündigung im Hauptmenü" value="@Model.Announcement" maxlength="500" rows="3" optional="true" />
+                </div>
+            </div>
+        </md-tab-panel>
+
+        <md-tab-panel id="system-info">
+            <div class="mat-card">
+                <div class="mat-card__body">
+                    <dl class="mat-kv">
+                        <dt>Version</dt><dd class="mat-mono">@AppInfo.Version</dd>
+                        <dt>Protokoll</dt><dd class="mat-mono">@TurboToysModule.Protocol</dd>
+                        <dt>Gestartet</dt><dd class="mat-mono">@Ui.Stamp(AppInfo.Started)</dd>
+                        <dt>Laufzeit</dt><dd class="mat-mono">.NET @Environment.Version</dd>
+                    </dl>
+                </div>
+            </div>
+        </md-tab-panel>
+    </div>
+
+    <md-buttons save="Speichern" back="/Admin/TurboToys" />
+</form>

@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The rules of TurboToys without a server: the entities (plain classes), the catalogue (cars, weapons, tracks, cups), tuning, prizes and levels,
+    the race room (lobby, start, pickups, hits, laps, results) and its messages. Used by the plugin (TurboToys.Module, online) and by the offline game
+    of the app (TurboToys.Local). No ASP.NET, no database. The track layouts are the browser's data/layouts.json (embedded here for the lap checks).
+  -->
+  <PropertyGroup>
+    <RootNamespace>TurboToys</RootNamespace>
+    <AssemblyName>TurboToys.Core</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\TurboToys.Module\wwwroot\data\layouts.json" LogicalName="TurboToys.layouts.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="TurboToys.Module" />
+    <InternalsVisibleTo Include="TurboToys.Local" />
+    <InternalsVisibleTo Include="TurboToys.Tests" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,99 @@
+/* TurboToys · the comic layer of a race (comic.js) and the HUD (hud.js). */
+
+.comic-layer { position: fixed; inset: 0; pointer-events: none; z-index: 6; overflow: hidden; }
+.comic-pop { position: absolute; transform: translate(-50%, -50%) rotate(var(--tilt)); animation: pop-in var(--life) cubic-bezier(.2, 1.6, .4, 1) both; filter: drop-shadow(0 0 0 transparent); }
+.comic-pop svg { display: block; width: 100%; overflow: visible; }
+@keyframes pop-in {
+    0% { transform: translate(-50%, -50%) rotate(var(--tilt)) scale(.1); opacity: 0; }
+    12% { transform: translate(-50%, -50%) rotate(var(--tilt)) scale(1.15); opacity: 1; }
+    22% { transform: translate(-50%, -50%) rotate(var(--tilt)) scale(1); }
+    80% { opacity: 1; }
+    100% { transform: translate(-50%, -62%) rotate(var(--tilt)) scale(1.05); opacity: 0; }
+}
+
+.comic-shout { position: absolute; left: 50%; top: 38%; transform: translate(-50%, -50%); display: grid; justify-items: center; animation: shout var(--life) cubic-bezier(.2, 1.5, .4, 1) both; }
+.comic-shout .word { font: 150px/0.9 Bangers, Impact, sans-serif; letter-spacing: 4px; color: var(--yellow); -webkit-text-stroke: 4px var(--ink); text-shadow: 8px 8px 0 var(--ink); white-space: nowrap; transform: rotate(-4deg); }
+.comic-shout .sub { margin-top: 6px; padding: 4px 14px; background: var(--paper); border: 3px solid var(--ink); font: 26px Bangers, Impact, sans-serif; letter-spacing: 1px; box-shadow: 4px 4px 0 var(--ink); transform: rotate(2deg); }
+.comic-shout--hit .word { color: var(--red); }
+.comic-shout--good .word { color: var(--lime); }
+.comic-shout--turbo .word { color: var(--sky); }
+@keyframes shout {
+    0% { transform: translate(-50%, -50%) scale(3); opacity: 0; }
+    15% { transform: translate(-50%, -50%) scale(.9); opacity: 1; }
+    25% { transform: translate(-50%, -50%) scale(1); }
+    85% { opacity: 1; }
+    100% { transform: translate(-50%, -50%) scale(1.1); opacity: 0; }
+}
+
+.comic-caption { position: absolute; left: 50%; top: 92px; transform: translateX(-50%); padding: 8px 16px; background: #fff5c9; border: 3px solid var(--ink); box-shadow: 5px 5px 0 var(--ink); font: 800 16px Nunito, sans-serif; text-transform: uppercase; letter-spacing: 1px; animation: caption var(--life) ease both; white-space: nowrap; }
+@keyframes caption { 0% { transform: translate(-50%, -30px); opacity: 0; } 10%, 85% { transform: translate(-50%, 0); opacity: 1; } 100% { opacity: 0; } }
+
+/* the inset panel of XIII: a framed hole the race draws another camera into */
+.comic-inset { position: absolute; right: 24px; top: 250px; width: min(34vw, 420px); aspect-ratio: 1.45; border: 6px solid var(--ink); box-shadow: 9px 9px 0 rgba(20, 16, 12, .9); background: transparent; transform: rotate(1.5deg); animation: inset var(--life) cubic-bezier(.2, 1.4, .4, 1) both; outline: 3px solid var(--paper); outline-offset: -9px; }
+.comic-inset + .comic-inset { top: 560px; transform: rotate(-1.5deg); }
+.comic-inset .tag { position: absolute; left: -10px; top: -22px; padding: 3px 12px; background: var(--yellow); border: 3px solid var(--ink); font: 22px Bangers, Impact, sans-serif; letter-spacing: 1px; transform: rotate(-3deg); }
+@keyframes inset { 0% { transform: scale(.2) rotate(-12deg); opacity: 0; } 10% { transform: scale(1.04) rotate(1.5deg); opacity: 1; } 90% { opacity: 1; } 100% { transform: translateX(60px) rotate(4deg); opacity: 0; } }
+
+.hit-flash { position: fixed; inset: 0; pointer-events: none; z-index: 5; box-shadow: inset 0 0 120px 30px rgba(226, 57, 47, .75); opacity: 0; }
+.hit-flash.on { animation: hit .45s ease-out; }
+@keyframes hit { from { opacity: 1; } to { opacity: 0; } }
+
+/* ---- HUD ------------------------------------------------------------------------------- */
+.hud { position: fixed; inset: 0; pointer-events: none; z-index: 7; font-family: Bangers, Impact, sans-serif; letter-spacing: 1px; }
+.comic-box { background: var(--paper); border: 4px solid var(--ink); box-shadow: 5px 5px 0 var(--ink); border-radius: 6px; }
+.hud-place { position: absolute; left: 18px; top: 16px; padding: 2px 16px 0; display: flex; align-items: baseline; gap: 2px; background: var(--yellow); transform: rotate(-3deg); }
+.hud-place .pos { font-size: 78px; line-height: 1; color: var(--red); -webkit-text-stroke: 2px var(--ink); text-shadow: 4px 4px 0 var(--ink); }
+.hud-place .of { font-size: 30px; }
+.hud-lap { position: absolute; left: 190px; top: 22px; padding: 4px 14px; display: grid; justify-items: start; line-height: 1; }
+.hud-lap small { font-size: 15px; }
+.hud-lap b { font-size: 40px; }
+.hud-lap .time { font: 900 15px Nunito, monospace; letter-spacing: 0; }
+.hud-lap .best { font: 800 12px Nunito, monospace; letter-spacing: 0; opacity: .7; }
+.hud-field { position: absolute; left: 18px; top: 150px; margin: 0; padding: 6px 10px; list-style: none; font-size: 16px; display: grid; gap: 2px; min-width: 170px; }
+.hud-field li { display: grid; grid-template-columns: 1.6em 12px 1fr auto; gap: 6px; align-items: center; }
+.hud-field li i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--ink); }
+.hud-field li.me { color: var(--red); }
+.hud-field li.wrecked { opacity: .45; text-decoration: line-through; }
+.hud-field .n { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px; }
+.hud-map { position: absolute; right: 18px; top: 16px; width: 200px; height: 200px; background: rgba(244, 234, 210, .82); }
+.hud-feed { position: absolute; right: 18px; top: 236px; display: grid; gap: 6px; justify-items: end; font: 800 14px Nunito, sans-serif; letter-spacing: 0; }
+.feed-item { padding: 4px 10px; animation: panel-in .3s both; }
+.hud-bottom-left { position: absolute; left: 18px; bottom: 18px; display: flex; gap: 12px; align-items: end; }
+.hud-hp { padding: 6px 10px; width: 240px; }
+.hud-hp small { font-size: 15px; }
+.hud-hp .bar { height: 20px; border: 3px solid var(--ink); border-radius: 6px; background: #fff; overflow: hidden; margin-top: 2px; }
+.hud-hp .bar i { display: block; height: 100%; background: repeating-linear-gradient(-45deg, var(--lime) 0 10px, #86bd2c 10px 20px); transition: width .2s; }
+.hud-hp .bar i.low { background: repeating-linear-gradient(-45deg, var(--red) 0 10px, var(--red-dark) 10px 20px); animation: blink .5s steps(2) infinite; }
+@keyframes blink { 50% { opacity: .55; } }
+.hud-weapon { width: 96px; height: 96px; display: grid; place-items: center; position: relative; padding: 6px; }
+.hud-weapon svg { width: 52px; height: 52px; }
+.hud-weapon b { position: absolute; right: 6px; top: 2px; font-size: 24px; color: var(--red); -webkit-text-stroke: 1px var(--ink); }
+.hud-weapon small { position: absolute; bottom: -2px; font-size: 13px; }
+.hud-weapon.armed { background: var(--yellow); }
+.hud-weapon.flash { animation: panel-in .4s both; }
+.hud-ammo { padding: 6px 10px; display: grid; justify-items: center; line-height: 1; }
+.hud-ammo small { font-size: 14px; }
+.hud-ammo b { font-size: 30px; }
+.hud-gauge { position: absolute; right: 18px; bottom: 18px; width: 190px; height: 170px; display: grid; justify-items: center; align-content: center; background: radial-gradient(circle, #fff 55%, var(--paper) 56%); border-radius: 50% 50% 18px 18px; }
+.hud-gauge .dial { position: absolute; inset: 6px; width: calc(100% - 12px); height: calc(100% - 12px); }
+.hud-gauge .dial path { fill: none; stroke-linecap: round; }
+.hud-gauge .track { stroke: #e2d8c0; stroke-width: 12; }
+.hud-gauge .speed { stroke: var(--red); stroke-width: 12; transition: stroke-dashoffset .1s; }
+.hud-gauge .turbo-track { stroke: #d0ccc0; stroke-width: 8; }
+.hud-gauge .turbo { stroke: var(--sky); stroke-width: 8; }
+.hud-gauge b { font-size: 50px; line-height: .9; margin-top: 18px; z-index: 1; }
+.hud-gauge small { font-size: 14px; z-index: 1; }
+.turbo-label { position: absolute; bottom: 8px; padding: 1px 10px; border: 3px solid var(--ink); border-radius: 12px; background: #ddd; font-size: 17px; z-index: 1; }
+.turbo-label.full { background: var(--sky); }
+.turbo-label.on { background: var(--yellow); animation: wobble .15s infinite alternate; }
+.hud-hint { position: absolute; left: 50%; bottom: 110px; transform: translateX(-50%); padding: 6px 16px; background: var(--paper); border: 3px solid var(--ink); box-shadow: 4px 4px 0 var(--ink); font: 800 16px Nunito, sans-serif; letter-spacing: 0; opacity: 0; transition: opacity .3s; }
+.hud-hint.show { opacity: 1; }
+
+@media (max-width: 900px) {
+    .hud-place .pos { font-size: 54px; }
+    .hud-lap { left: 140px; }
+    .hud-field { display: none; }
+    .hud-map { width: 130px; height: 130px; }
+    .comic-shout .word { font-size: 90px; }
+    .comic-inset { top: 160px; width: 44vw; }
+}

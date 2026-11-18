@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    TurboToys as a Windows app: the MatGame shell (WebView2) with the player app embedded (TurboToys.Module/wwwroot) and the offline game
+    (TurboToys.Local: the same MatchRoom, bots and rules on the device). Online it plays against a MatGame master (default MatGameDefaultServer).
+    Publish: dotnet publish src/TurboToys.App -c Release -r win-x64 (one self-installing exe, see MatGame.Shell.Installer).
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- builds on the Linux runners too (the solution build); runs on Windows only -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <AssemblyName>TurboToys</AssemblyName>
+    <RootNamespace>TurboToys.App</RootNamespace>
+    <ApplicationIcon>turbotoys.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AssemblyMetadata Include="MatGameDefaultServer" Value="$(MatGameDefaultServer)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\MatGame\src\MatGame.Shell\MatGame.Shell.csproj" />
+    <ProjectReference Include="..\TurboToys.Local\TurboToys.Local.csproj" />
+  </ItemGroup>
+
+  <!-- the player app: TurboToys.Module/wwwroot → web/turbotoys/... (served at https://turbotoys.matgame.invalid/turbotoys/) -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\TurboToys.Module\wwwroot\**" LogicalName="web/turbotoys/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <Import Project="..\..\..\MatGame\src\MatGame.Shell\MatGame.Shell.targets" />
+
+</Project>

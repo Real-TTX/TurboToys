@@ -1,0 +1,45 @@
+@page "/Admin/TurboToys/Tracks"
+@model TurboToys.Pages.Admin.Tracks.IndexModel
+@{
+    ViewData["Title"] = "Strecken";
+    ViewData["Crumbs"] = new List<(string, string?)> { ("Administration", "/Admin"), ("TurboToys", "/Admin/TurboToys"), ("Strecken", null) };
+}
+<partial name="_Assets" />
+
+<div class="mat-list">
+    <partial name="_Toolbar" model="Model.Toolbar" />
+
+    @if (Model.Items.Count == 0)
+    {
+        <partial name="_Empty" model="@(new EmptyStateModel("track", Model.Toolbar.Total == 0 ? "Keine Strecken" : "Keine Strecke gefunden", Model.Toolbar.Total == 0 ? "Lege die erste Strecke an: eine Welt, Runden und Tageszeit." : "Ändere die Suche oder die Filter.", Model.Toolbar.Total == 0, "/Admin/TurboToys/Tracks/Edit", "Neue Strecke", Model.Toolbar.UrlReset()))" />
+    }
+    else
+    {
+        <md-table caption="Strecken">
+            <thead>
+                <tr><th scope="col" class="mat-num mat-hide-sm">#</th><th scope="col">Strecke</th><th scope="col">Welt</th><th scope="col">Tageszeit</th><th scope="col" class="mat-num">Runden</th><th scope="col" class="mat-num">Level</th><th scope="col">Status</th><th scope="col"><span class="mat-sr-only">Aktionen</span></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var t in Model.Items)
+                {
+                    <tr>
+                        <td data-label="#" class="mat-num mat-mono mat-hide-sm">@t.SortOrder</td>
+                        <td data-label="Strecke"><a href="/Admin/TurboToys/Tracks/Edit?id=@t.Id">@t.Name</a></td>
+                        <td data-label="Welt">@ContentLogic.LayoutName(t.Layout)</td>
+                        <td data-label="Tageszeit">@ContentLogic.TimeName(t.TimeOfDay)</td>
+                        <td data-label="Runden" class="mat-num mat-mono">@t.Laps</td>
+                        <td data-label="Level" class="mat-num mat-mono">@t.UnlockLevel</td>
+                        <td data-label="Status">@if (t.IsEnabled) { <span class="mat-pill mat-pill--ok">Offen</span> } else { <span class="mat-pill mat-pill--plain">Gesperrt</span> }</td>
+                        <td class="mat-table__cell-actions"><div class="mat-table__actions"><a class="mat-btn mat-btn--ghost mat-btn--icon mat-btn--sm" href="/Admin/TurboToys/Tracks/Edit?id=@t.Id" aria-label="@t.Name bearbeiten" data-tip="Bearbeiten">@Ui.Icon("edit")</a></div></td>
+                    </tr>
+                }
+            </tbody>
+        </md-table>
+    }
+
+    <partial name="_Pager" model="Model.Pager" />
+
+    <div class="mat-actions">
+        <a class="mat-btn mat-btn--primary" href="/Admin/TurboToys/Tracks/Edit">@Ui.Icon("plus")<span>Neue Strecke</span></a>
+    </div>
+</div>

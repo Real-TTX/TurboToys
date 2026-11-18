@@ -1,0 +1,121 @@
+@page "/Admin/TurboToys/Players/Edit"
+@model TurboToys.Pages.Admin.Players.EditModel
+@{
+    var p = Model.Detail!.Player;
+    ViewData["Title"] = p.DisplayName;
+    ViewData["PageSub"] = p.IsGuest ? "Gast · Konto und Anmeldung verwaltet MatGame" : "Konto und Anmeldung verwaltet MatGame";
+    ViewData["Crumbs"] = new List<(string, string?)> { ("Administration", "/Admin"), ("TurboToys", "/Admin/TurboToys"), ("Spieler", "/Admin/TurboToys/Players"), (p.DisplayName, null) };
+    ViewData["Width"] = "narrow";
+    var tab = Model.Tab;
+}
+<partial name="_Assets" />
+
+<form class="mat-form" method="post" novalidate>
+    <partial name="_FormSummary" model="ViewData.ModelState" />
+
+    <div data-tabs>
+        <md-tab-group label="Bereiche des Spielers">
+            <md-tab-button panel="player-progress" icon="star" active="@(tab == "progress")">Fortschritt</md-tab-button>
+            <md-tab-button panel="player-garage" icon="car" active="@(tab == "garage")">Garage</md-tab-button>
+            <md-tab-button panel="player-races" icon="flag" active="@(tab == "races")">Rennen</md-tab-button>
+            <md-tab-button panel="player-stats" icon="bar-chart" active="@(tab == "stats")">Statistik</md-tab-button>
+        </md-tab-group>
+
+        <md-tab-panel id="player-progress" active="@(tab == "progress")">
+            <div class="mat-card">
+                <div class="mat-card__body mat-form">
+                    <md-field name="Money" kind="number" label="Schrauben" required value="@Model.Money" min="0" mono="true" />
+                    <md-field name="Xp" kind="number" label="Erfahrung (XP)" required value="@Model.Xp" min="0" mono="true"
+                              hint="@($"Level {Progression.LevelOf(Model.Xp)} · Level {Progression.LevelOf(Model.Xp) + 1} ab {Progression.XpFor(Progression.LevelOf(Model.Xp) + 1)} XP")" />
+                </div>
+            </div>
+        </md-tab-panel>
+
+        <md-tab-panel id="player-garage" active="@(tab == "garage")">
+            <div class="mat-card">
+                @if (Model.Detail.Garage.Count == 0)
+                {
+                    <div class="mat-card__body"><p class="mat-muted">Die Garage ist leer – beim nächsten Besuch bekommt der Spieler das Startauto.</p></div>
+                }
+                else
+                {
+                    <md-table caption="Garage">
+                        <thead>
+                            <tr><th scope="col">Auto</th><th scope="col">Antrieb</th><th scope="col" class="mat-num">Motor</th><th scope="col" class="mat-num">Reifen</th><th scope="col" class="mat-num">Panzer</th><th scope="col" class="mat-num">Turbo</th><th scope="col" class="mat-num">Waffen</th><th scope="col"><span class="mat-sr-only">Aktionen</span></th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var (g, car) in Model.Detail.Garage)
+                            {
+                                <tr>
+                                    <td data-label="Auto"><span class="tt-swatch" style="background:@g.Paint"></span>@car.Name @if (p.SelectedGarageCarId == g.Id) { <span class="mat-pill mat-pill--ok">Fährt</span> }</td>
+                                    <td data-label="Antrieb">@ContentLogic.DriveName(car.Drive)</td>
+                                    <td data-label="Motor" class="mat-num mat-mono">@g.Engine</td>
+                                    <td data-label="Reifen" class="mat-num mat-mono">@g.Tires</td>
+                                    <td data-label="Panzer" class="mat-num mat-mono">@g.Armor</td>
+                                    <td data-label="Turbo" class="mat-num mat-mono">@g.Turbo</td>
+                                    <td data-label="Waffen" class="mat-num mat-mono">@g.Weapons</td>
+                                    <td class="mat-table__cell-actions"><div class="mat-table__actions">
+                                        <button type="submit" class="mat-btn mat-btn--ghost mat-btn--icon mat-btn--sm" formaction="?handler=RemoveCar&id=@p.Id&car=@g.Id" formnovalidate
+                                                data-confirm="@($"„{car.Name}“ aus der Garage nehmen?")" aria-label="@car.Name entfernen" data-tip="Aus der Garage nehmen">@Ui.Icon("trash")</button>
+                                    </div></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </md-table>
+                }
+            </div>
+        </md-tab-panel>
+
+        <md-tab-panel id="player-races" active="@(tab == "races")">
+            <div class="mat-card">
+                @if (Model.Detail.History.Count == 0)
+                {
+                    <div class="mat-card__body"><p class="mat-muted">Noch keine Rennen gefahren.</p></div>
+                }
+                else
+                {
+                    <md-table caption="Letzte Rennen">
+                        <thead>
+                            <tr><th scope="col">Rennen</th><th scope="col">Strecke</th><th scope="col" class="mat-num">Platz</th><th scope="col" class="mat-num mat-hide-sm">Abschüsse</th><th scope="col" class="mat-num">Schrauben</th><th scope="col" class="mat-hide-sm">Ende</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var h in Model.Detail.History)
+                            {
+                                <tr>
+                                    <td data-label="Rennen">@h.Name</td>
+                                    <td data-label="Strecke">@h.TrackName</td>
+                                    <td data-label="Platz" class="mat-num"><span class="tt-place tt-place--@h.Place">@h.Place</span> <small class="mat-muted">/ @h.Cars</small></td>
+                                    <td data-label="Abschüsse" class="mat-num mat-mono mat-hide-sm">@h.Kills</td>
+                                    <td data-label="Schrauben" class="mat-num mat-mono">@h.Money</td>
+                                    <td data-label="Ende" class="mat-mono mat-hide-sm">@Ui.Stamp(h.EndDate)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </md-table>
+                }
+            </div>
+        </md-tab-panel>
+
+        <md-tab-panel id="player-stats" active="@(tab == "stats")">
+            <div class="mat-card">
+                <div class="mat-card__body">
+                    <dl class="mat-kv">
+                        <dt>Rennen</dt><dd class="mat-mono">@p.RacesPlayed</dd>
+                        <dt>Siege</dt><dd class="mat-mono">@p.RacesWon</dd>
+                        <dt>Podestplätze</dt><dd class="mat-mono">@p.Podiums</dd>
+                        <dt>Pokale</dt><dd class="mat-mono">@p.CupsWon</dd>
+                        <dt>Abschüsse</dt><dd class="mat-mono">@p.Kills</dd>
+                        <dt>Selbst geschrottet</dt><dd class="mat-mono">@p.Wrecks</dd>
+                        <dt>Verdient</dt><dd class="mat-mono">@p.MoneyEarned Schrauben</dd>
+                        <dt>Zuletzt gefahren</dt><dd class="mat-mono">@Ui.Stamp(p.LastRaceDate)</dd>
+                        <dt>Dabei seit</dt><dd class="mat-mono">@Ui.Stamp(p.CreateDate)</dd>
+                        <dt>Konto-Nummer</dt><dd class="mat-mono">@p.Id</dd>
+                    </dl>
+                </div>
+            </div>
+        </md-tab-panel>
+    </div>
+
+    <md-buttons save="Speichern" back="/Admin/TurboToys/Players" delete-handler="Delete" delete-label="Entfernen"
+                delete-confirm="@($"{p.DisplayName} aus TurboToys entfernen? Garage, Geld und Fortschritt sind dann weg, das Konto in MatGame bleibt.")" />
+</form>
