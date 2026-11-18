@@ -27,12 +27,6 @@
     <ProjectReference Include="..\TurboToys.Core\TurboToys.Core.csproj" />
   </ItemGroup>
 
-  <!-- the developer previews are not part of the plugin -->
-  <ItemGroup>
-    <Content Remove="wwwroot\dev\**" />
-    <None Include="wwwroot\dev\**" />
-  </ItemGroup>
-
   <ItemGroup>
     <InternalsVisibleTo Include="TurboToys.Tests" />
   </ItemGroup>

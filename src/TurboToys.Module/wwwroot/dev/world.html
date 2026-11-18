@@ -2,8 +2,9 @@
 <html lang="de">
 <head>
     <meta charset="utf-8" />
-    <!-- developer preview of a world: dev/world.html?layout=kidsroom&time=day&view=top|chase|orbit&quality=high&at=0.1&speed=0 -->
+    <!-- preview of a world (also linked from the admin): dev/world.html?layout=kidsroom&time=day&view=top|chase|orbit&quality=high&at=0.1&speed=0 (speed > 0: a ride along the track) -->
     <base href="/turbotoys/" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <title>TurboToys · Welt-Vorschau</title>
     <style>
         @font-face { font-family: Bangers; src: url(fonts/bangers-latin-400-normal.woff2) format('woff2'); }
@@ -52,11 +53,14 @@
             camera.lookAt(b.cx, 0, b.cz);
             focus.set(b.cx, 0, b.cz);
         } else if (view === 'orbit') {
-            const a = time * 0.1 + at * Math.PI * 2;
-            const r = Math.max(b.sizeX, b.sizeZ) * 0.75;
-            camera.position.set(b.cx + Math.cos(a) * r, r * 0.45, b.cz + Math.sin(a) * r);
-            camera.lookAt(b.cx, 0, b.cz);
-            focus.set(b.cx, 0, b.cz);
+            // a drone above the road: over the track nothing stands in the way (indoor worlds are full of shelves, beams and furniture)
+            const s = ((at + time * 26 / track.length) % 1 + 1) % 1;
+            const i = Math.floor(s * track.count);
+            const p = track.pointAt(i);
+            const ahead = track.pointAt(i + 45);
+            camera.position.set(p.x, p.y + 15, p.z);
+            camera.lookAt(ahead.x, ahead.y, ahead.z);
+            focus.set(ahead.x, ahead.y, ahead.z);
         } else {
             const speed = parseFloat(q.get('speed') ?? '0');
             const s = ((at + time * speed / track.length) % 1 + 1) % 1;

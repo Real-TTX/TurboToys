@@ -24,7 +24,7 @@ Stack: .NET 10, Razor class library, SignalR, EF Core + PostgreSQL 17 (MatGame's
 - `dotnet build TurboToys.slnx`, `dotnet test TurboToys.slnx` (rules, race room, offline game; no database).
 - `./scripts/redeploy.ps1` rebuilds and starts **MatGame's** local stack with every game: http://localhost:2770/turbotoys/ – how every change is tested.
 - Own image: `docker compose -f docker-compose.local.yml up -d --build` → http://localhost:2773/turbotoys/ (pgAdmin 2776, Postgres 2777).
-- Previews without a server: `node scripts/serve.mjs 2779` → `/turbotoys/dev/world.html?layout=kidsroom&view=chase|top|orbit&at=0.3&time=day|dusk|night`,
+- Previews without a server: `node scripts/serve.mjs 2779` → `/turbotoys/dev/world.html?layout=kidsroom&view=chase|top|orbit&at=0.3&speed=0&time=day|dusk|night` (orbit = a drone above the road; also served by the plugin: the admin's track preview links to it),
   `dev/cars.html`, `dev/sound-avatar.html`, `dev/cover.html`.
 - Browser checks (Playwright with the installed Edge, `cd tools && npm install` once): `node tools/shot.mjs <url> <png>`, `node tools/play.mjs` (guest, menu,
   garage, race), `node tools/race.mjs` (a whole race with the developer autopilot `localStorage turbotoys.autopilot = 1`), `node tools/admin.mjs <fresh server>`.
